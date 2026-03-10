@@ -32,7 +32,7 @@ st.markdown("""
         color: white;
     }
     </style>
-    """, unsafe_allow_state=True)
+    """, unsafe_allow_html=True)
 
 # --- 3. MODEL LOADING ---
 @st.cache_resource
@@ -177,4 +177,5 @@ with tab2:
     st.write("This section will provide a visual summary of the resistance trends once data is processed.")
     # Placeholder for future HD-level Plotly charts
     st.metric(label="Total Isolates Processed", value="--")
+
 
