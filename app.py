@@ -77,30 +77,27 @@ def parse_pdf_report(file_object):
             sex_val = "Male" if "Male" in g_str else "Female"
             neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
         
-        # Privacy Redaction
+        # Privacy Redaction for metadata only
         safe_text = redact_text(full_text)
         
-        # FIXED: Dynamic Sample Type Detection (Jumps over blank lines)
-        sample_type_match = re.search(r'SAMPLE\s*\n+\s*([^\n]+)', safe_text)
+        # FIXED: Run sample type and site on the UNREDACTED text to prevent NER masking
+        sample_type_match = re.search(r'SAMPLE\s*\n+\s*([^\n]+)', full_text)
         sample_type_val = sample_type_match.group(1).strip() if sample_type_match else "Unknown"
 
-        # Fallback for Sample Site
-        sample_site = re.search(r'Swab:\s*(.+)', safe_text)
+        sample_site = re.search(r'Swab:\s*(.+)', full_text)
         sample_site_val = sample_site.group(1).strip() if sample_site else "NA"
 
-        # --- IMPROVED Isolate Chunking Logic ---
+        # --- IMPROVED Isolate Chunking Logic (UNREDACTED text) ---
         isolate_pattern = r'\d+\.\s*(?:Heavy|Moderate|Light)\s*growth\s*-\s*([^\n]+)'
-        parts = re.split(isolate_pattern, safe_text)
+        parts = re.split(isolate_pattern, full_text)
         
-        # Fallback for complex multi-line formats
         if len(parts) < 2:
             isolate_pattern_complex = r'(?:Heavy|Moderate|Light)\s*growth(?:.*?Identification)?\s*\n\s*([A-Z][a-z]+\s+[a-z]+)'
-            parts = re.split(isolate_pattern_complex, safe_text, flags=re.DOTALL)
+            parts = re.split(isolate_pattern_complex, full_text, flags=re.DOTALL)
 
         num_isolates = len(parts) // 2
         purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
 
-        # RESTORED: Full Comprehensive Master List of Antibiotics
         antibiotics_to_check = [
             "Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid",
             "Ampicillin", "Amoxicillin/Clavulanic acid", "Amikacin",
@@ -123,15 +120,13 @@ def parse_pdf_report(file_object):
             }
             
             for abx in antibiotics_to_check:
-                # Flexible pattern allows for spaces, slashes, and random newlines within the antibiotic name
                 abx_parts = re.split(r'[\s/]+', abx)
                 abx_pattern = r'[\s/]*'.join([re.escape(p) for p in abx_parts])
                 
-                # Jumps over non-letters or clinical units (like 'ug' or 'MIC') to find the final result
                 match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b', isolate_text, re.IGNORECASE)
                 
                 if match:
-                    record[abx] = match.group(1).upper()[0] # Normalizes 'Susceptible' down to 'S'
+                    record[abx] = match.group(1).upper()[0]
                 else:
                     record[abx] = "NA"
                     
