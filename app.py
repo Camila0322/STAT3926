@@ -1,9 +1,13 @@
-import streamlit as st
+ import streamlit as st
 import pdfplumber
 import spacy
 import pandas as pd
 import re
 import io
+import os
+
+# 1. THIS MUST BE THE FIRST STREAMLIT COMMAND
+st.set_page_config(page_title="AMR Data Extractor", layout="wide")
 
 # Cache the NLP model so it only loads once per session
 @st.cache_resource
@@ -42,15 +46,15 @@ def parse_pdf_report(file_object):
         full_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
         # --- Metadata Regex (Run on un-redacted text) ---
-        # Updated to capture the space and the trailing numbers/hyphens (e.g., CP 26-00756)
+        # Fixed: Captures full reference including space (e.g., CP 26-00756)
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', full_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
         
-	# Bounded regex stops capturing when it hits Gender, Age, or "Our Ref"
+        # Bounded regex stops capturing when it hits Gender, Age, or "Our Ref"
         species_breed = re.search(r'(Canine|Feline)\s+([a-zA-Z\s\-]+?)(?=\s+(?:Male|Female|\d+\s*Years?|Our Ref|Your Ref|$))', full_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         
-        # The .strip(" -") removes any spaces OR hyphens from the edges of the text
+        # Fixed: .strip(" -") removes leading/trailing hyphens from the breed
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
         
         age_raw = re.search(r'(\d+\s*Years?)', full_text)
@@ -121,8 +125,7 @@ def parse_pdf_report(file_object):
 
     return extracted_data
 
-# --- Web Interface (Streamlit) ---
-st.set_page_config(page_title="AMR Data Extractor", layout="wide")
+# --- Main Page UI ---
 st.title("Antimicrobial Resistance Pipeline")
 st.write("Extract metadata and susceptibility results from diagnostic PDFs. You can update an existing master sheet or generate a brand new one.")
 
@@ -188,7 +191,7 @@ if st.button("Run Extraction Pipeline", type="primary"):
                     if master_file is None:
                         st.success(f"Successfully generated a new master file with {len(new_records)} isolates.")
                     else:
-                        st.success(f"Successfully appended {len(new_records)} new isolates to your existing master file.")
+                        st.success(f"Successfully appended {len(new_records)} new isolates.")
                 else:
                     updated_df = master_df
                     st.info("No new records were added (all PDFs were duplicates or failed).")
