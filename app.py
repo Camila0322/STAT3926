@@ -80,7 +80,7 @@ def parse_pdf_report(file_object):
         # Privacy Redaction for metadata only
         safe_text = redact_text(full_text)
         
-        # FIXED: Run sample type and site on the UNREDACTED text to prevent NER masking
+        # Dynamic Sample Type Detection (Jumps over blank lines)
         sample_type_match = re.search(r'SAMPLE\s*\n+\s*([^\n]+)', full_text)
         sample_type_val = sample_type_match.group(1).strip() if sample_type_match else "Unknown"
 
@@ -133,10 +133,15 @@ def parse_pdf_report(file_object):
             extracted_data.append(record)
     return extracted_data
 
-# --- 5. SIDEBAR DESIGN ---
+# --- 5. SIDEBAR DESIGN (FIXED ICON) ---
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/5/50/University_of_Sydney_logo.svg/1200px-University_of_Sydney_logo.svg.png", width=180)
-    st.title("Navigation & Help")
+    # Reliable HTML-based badge instead of hotlinking external images
+    st.markdown("""
+        <div style="text-align: center; margin-bottom: 20px;">
+            <div style="font-size: 50px; line-height: 1;">🏛️</div>
+            <h2 style="color: #002b5c; margin-top: 10px; font-weight: bold;">USYD Vet Path</h2>
+        </div>
+    """, unsafe_allow_html=True)
     st.markdown("---")
     st.markdown("### 🛠️ Extraction Workflow")
     st.write("1. 📂 **Upload** Master Excel")
@@ -201,7 +206,10 @@ with tab2:
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Isolates", len(df))
         m2.metric("Unique Cases", df["Lab Reference"].nunique())
-        clean_species = df[~df["Isolate"].isna() & (df["Isolate"] != "NA")]
+        
+        # Clean the column robustly as strings to prevent Pandas indexing errors
+        df["Isolate"] = df["Isolate"].astype(str).str.strip()
+        clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "")]
         m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
         st.divider()
         
@@ -210,13 +218,18 @@ with tab2:
         
         with col_c1:
             st.subheader("Bacterial Species Distribution")
-            species_counts = clean_species["Isolate"].value_counts().reset_index()
-            species_counts.columns = ["Bacterial Species", "Isolate Count"]
+            
+            # FIXED CHART: Robust resetting of index and defining text explicitely 
+            species_counts = clean_species["Isolate"].value_counts().rename_axis("Bacterial Species").reset_index(name="Isolate Count")
             
             fig_species = px.bar(
-                species_counts, x="Bacterial Species", y="Isolate Count", 
-                color="Bacterial Species", text_auto=True, 
-                color_discrete_sequence=px.colors.qualitative.Pastel, template="plotly_white"
+                species_counts, 
+                x="Bacterial Species", 
+                y="Isolate Count", 
+                color="Bacterial Species", 
+                text="Isolate Count", # Explicit mapping prevents text_auto rendering bugs
+                color_discrete_sequence=px.colors.qualitative.Pastel, 
+                template="plotly_white"
             )
             fig_species.update_layout(showlegend=False, xaxis={'categoryorder':'total descending'})
             st.plotly_chart(fig_species, use_container_width=True)
