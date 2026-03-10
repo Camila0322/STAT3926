@@ -80,31 +80,37 @@ def parse_pdf_report(file_object):
         # Privacy Redaction
         safe_text = redact_text(full_text)
         
-        # Dynamic Sample Type Detection (Handles both Swabs and Urine/Cystocentesis)
-        sample_type_match = re.search(r'SAMPLE\s*\n+([^\n]+)', safe_text)
+        # FIXED: Dynamic Sample Type Detection (Jumps over blank lines)
+        sample_type_match = re.search(r'SAMPLE\s*\n+\s*([^\n]+)', safe_text)
         sample_type_val = sample_type_match.group(1).strip() if sample_type_match else "Unknown"
 
-        # Fallback for Sample Site (if applicable)
+        # Fallback for Sample Site
         sample_site = re.search(r'Swab:\s*(.+)', safe_text)
         sample_site_val = sample_site.group(1).strip() if sample_site else "NA"
 
-        # --- IMPROVED Isolate Chunking & Purity Logic ---
-        # First try the standard format: "1. Heavy growth - Escherichia coli"
+        # --- IMPROVED Isolate Chunking Logic ---
         isolate_pattern = r'\d+\.\s*(?:Heavy|Moderate|Light)\s*growth\s*-\s*([^\n]+)'
         parts = re.split(isolate_pattern, safe_text)
         
-        # If it fails, fallback to the complex multi-line format (MALDI-TOF / CFU counts)
+        # Fallback for complex multi-line formats
         if len(parts) < 2:
-            isolate_pattern_complex = r'(?:Heavy|Moderate|Light)\s*growth.*?(?:MALDI-TOF Identification|Identification)?\s*\n\s*([A-Z][a-z]+\s+[a-z]+)'
-            parts = re.split(isolate_pattern_complex, safe_text, flags=re.DOTALL | re.IGNORECASE)
+            isolate_pattern_complex = r'(?:Heavy|Moderate|Light)\s*growth(?:.*?Identification)?\s*\n\s*([A-Z][a-z]+\s+[a-z]+)'
+            parts = re.split(isolate_pattern_complex, safe_text, flags=re.DOTALL)
 
         num_isolates = len(parts) // 2
         purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
 
-        abx_list = ["Penicillin", "Ampicillin", "Amoxicillin/Clavulanic acid", "Oxacillin", 
-                    "Gentamicin", "Enrofloxacin", "Cefalexin", "Cefovecin", "Chloramphenicol",
-                    "Doxycycline", "Trimethoprim/sulpha", "Ticarcillin/clavulanic acid", 
-                    "Amikacin", "Imipenem"]
+        # RESTORED: Full Comprehensive Master List of Antibiotics
+        antibiotics_to_check = [
+            "Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid",
+            "Ampicillin", "Amoxicillin/Clavulanic acid", "Amikacin",
+            "Oxacillin", "Gentamicin (High Level)", "Gentamicin", "Imipenem", 
+            "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", 
+            "Erythromycin", "Cefoxitin", "Rifampicin", "Doxycycline", 
+            "Cefalexin", "Cefazolin", "Cefovecin", "Neomycin", "Ceftiofur",
+            "Tobramycin", "Enrofloxacin", "Polymyxin B", "Marbofloxacin", 
+            "Fusidic acid", "Nitrofurantoin"
+        ]
         
         for i in range(1, len(parts), 2):
             isolate_species = parts[i].strip()
@@ -115,13 +121,24 @@ def parse_pdf_report(file_object):
                 "Sample Type": sample_type_val, "Site": sample_site_val, 
                 "Purity": purity_val, "Isolate": isolate_species
             }
-            for abx in abx_list:
-                match = re.search(rf'{re.escape(abx)}[^a-zA-Z]*([SIR])\b', isolate_text, re.IGNORECASE)
-                record[abx] = match.group(1).upper() if match else "NA"
+            
+            for abx in antibiotics_to_check:
+                # Flexible pattern allows for spaces, slashes, and random newlines within the antibiotic name
+                abx_parts = re.split(r'[\s/]+', abx)
+                abx_pattern = r'[\s/]*'.join([re.escape(p) for p in abx_parts])
+                
+                # Jumps over non-letters or clinical units (like 'ug' or 'MIC') to find the final result
+                match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b', isolate_text, re.IGNORECASE)
+                
+                if match:
+                    record[abx] = match.group(1).upper()[0] # Normalizes 'Susceptible' down to 'S'
+                else:
+                    record[abx] = "NA"
+                    
             extracted_data.append(record)
     return extracted_data
 
-# --- 5. SIDEBAR DESIGN (IMPROVED ICONS) ---
+# --- 5. SIDEBAR DESIGN ---
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/en/thumb/5/50/University_of_Sydney_logo.svg/1200px-University_of_Sydney_logo.svg.png", width=180)
     st.title("Navigation & Help")
@@ -189,7 +206,8 @@ with tab2:
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Isolates", len(df))
         m2.metric("Unique Cases", df["Lab Reference"].nunique())
-        m3.metric("Bacterial Species", df["Isolate"].nunique())
+        clean_species = df[~df["Isolate"].isna() & (df["Isolate"] != "NA")]
+        m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
         st.divider()
         
         # Row 2: Charts
@@ -197,19 +215,15 @@ with tab2:
         
         with col_c1:
             st.subheader("Bacterial Species Distribution")
-            # Corrected Species Graph: Filter NAs, count individual isolates, and sort
-            species_counts = df[df["Isolate"] != "NA"]["Isolate"].value_counts().reset_index()
+            species_counts = clean_species["Isolate"].value_counts().reset_index()
             species_counts.columns = ["Bacterial Species", "Isolate Count"]
             
             fig_species = px.bar(
-                species_counts, 
-                x="Bacterial Species", 
-                y="Isolate Count", 
-                color="Bacterial Species",
-                color_discrete_sequence=px.colors.qualitative.Pastel,
-                template="plotly_white"
+                species_counts, x="Bacterial Species", y="Isolate Count", 
+                color="Bacterial Species", text_auto=True, 
+                color_discrete_sequence=px.colors.qualitative.Pastel, template="plotly_white"
             )
-            fig_species.update_layout(showlegend=False)
+            fig_species.update_layout(showlegend=False, xaxis={'categoryorder':'total descending'})
             st.plotly_chart(fig_species, use_container_width=True)
 
         with col_c2:
