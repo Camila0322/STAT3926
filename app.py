@@ -1,4 +1,4 @@
- import streamlit as st
+import streamlit as st
 import pdfplumber
 import spacy
 import pandas as pd
@@ -233,3 +233,4 @@ if st.button("Run Extraction Pipeline", type="primary"):
                 st.error(f"Failed to read data from the following file(s): {', '.join(flagged_files)}")
     else:
         st.error("Please upload at least one PDF report to begin.")
+
