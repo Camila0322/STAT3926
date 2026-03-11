@@ -135,7 +135,6 @@ def parse_pdf_report(file_object):
 
 # --- 5. SIDEBAR DESIGN (FIXED ICON) ---
 with st.sidebar:
-    # Reliable HTML-based badge instead of hotlinking external images
     st.markdown("""
         <div style="text-align: center; margin-bottom: 20px;">
             <div style="font-size: 50px; line-height: 1;">🏛️</div>
@@ -207,7 +206,7 @@ with tab2:
         m1.metric("Total Isolates", len(df))
         m2.metric("Unique Cases", df["Lab Reference"].nunique())
         
-        # Clean the column robustly as strings to prevent Pandas indexing errors
+        # Clean the column robustly
         df["Isolate"] = df["Isolate"].astype(str).str.strip()
         clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "")]
         m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
@@ -219,19 +218,28 @@ with tab2:
         with col_c1:
             st.subheader("Bacterial Species Distribution")
             
-            # FIXED CHART: Robust resetting of index and defining text explicitely 
-            species_counts = clean_species["Isolate"].value_counts().rename_axis("Bacterial Species").reset_index(name="Isolate Count")
+            # FIXED CHART: Removed color argument to stop Plotly spacing bugs
+            species_counts = clean_species["Isolate"].value_counts().reset_index()
+            species_counts.columns = ["Bacterial Species", "Isolate Count"]
             
             fig_species = px.bar(
                 species_counts, 
                 x="Bacterial Species", 
                 y="Isolate Count", 
-                color="Bacterial Species", 
-                text="Isolate Count", # Explicit mapping prevents text_auto rendering bugs
-                color_discrete_sequence=px.colors.qualitative.Pastel, 
+                text="Isolate Count", 
                 template="plotly_white"
             )
-            fig_species.update_layout(showlegend=False, xaxis={'categoryorder':'total descending'})
+            # Apply professional styling and force text outside
+            fig_species.update_traces(
+                textposition='outside', 
+                marker_color='#002b5c'  # USYD Dark Blue
+            )
+            fig_species.update_layout(
+                xaxis={'categoryorder':'total descending'},
+                xaxis_title="Species",
+                yaxis_title="Count",
+                margin=dict(t=20, b=20)
+            )
             st.plotly_chart(fig_species, use_container_width=True)
 
         with col_c2:
@@ -243,7 +251,7 @@ with tab2:
                 sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
                 fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group",
                                        color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
-                fig_sir.update_layout(xaxis_tickangle=-45)
+                fig_sir.update_layout(xaxis_tickangle=-45, margin=dict(t=20, b=20))
                 st.plotly_chart(fig_sir, use_container_width=True)
             
         st.subheader("Breed Prevalence")
