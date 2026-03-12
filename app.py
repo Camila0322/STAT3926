@@ -76,7 +76,8 @@ def parse_pdf_report(file_object):
         if re.search(r'No\s+(?:significant\s+)?growth', full_text, re.IGNORECASE):
             return [], ["No Growth Detected"], lab_ref_val
         
-        species_breed = re.search(r'(Canine|Feline)\s+([a-zA-Z\s\-]+?)(?=\s+(?:Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', full_text, re.IGNORECASE)
+        # FIXED: Handles "Canine - Cocker Spaniel" and stops safely at a new line (\n)
+        species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', full_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
         
@@ -94,14 +95,12 @@ def parse_pdf_report(file_object):
         safe_text = redact_text(full_text)
         
         # --- IMPROVED SAMPLE TYPE & SITE DETECTION ---
-        # Look for "SAMPLE" (with or without a number like "SAMPLE 1") and grab the next line
         sample_block_match = re.search(r'SAMPLE(?:\s+\d+)?\s*\n+\s*([^\n]+)', full_text, re.IGNORECASE)
         sample_type_val = "Unknown"
         sample_site_val = "NA"
         
         if sample_block_match:
             sample_line = sample_block_match.group(1).strip()
-            # If the line has a colon, split it into Type and Site (e.g., "Swab: Right ear mass")
             if ':' in sample_line:
                 parts = sample_line.split(':', 1)
                 sample_type_val = parts[0].strip()
@@ -109,7 +108,6 @@ def parse_pdf_report(file_object):
             else:
                 sample_type_val = sample_line
                 
-        # Fallback if "SAMPLE" block wasn't found but "Swab:" exists elsewhere
         if sample_site_val == "NA":
             site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid):\s*(.+)', full_text, re.IGNORECASE)
             if site_fallback:
