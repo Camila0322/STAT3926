@@ -68,7 +68,7 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         full_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # Metadata Extraction (Needed early to check for duplicates)
+        # Metadata Extraction
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', full_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
 
@@ -93,12 +93,28 @@ def parse_pdf_report(file_object):
         # Privacy Redaction for metadata only
         safe_text = redact_text(full_text)
         
-        # Dynamic Sample Type Detection
-        sample_type_match = re.search(r'SAMPLE\s*\n+\s*([^\n]+)', full_text)
-        sample_type_val = sample_type_match.group(1).strip() if sample_type_match else "Unknown"
-
-        sample_site = re.search(r'Swab:\s*(.+)', full_text)
-        sample_site_val = sample_site.group(1).strip() if sample_site else "NA"
+        # --- IMPROVED SAMPLE TYPE & SITE DETECTION ---
+        # Look for "SAMPLE" (with or without a number like "SAMPLE 1") and grab the next line
+        sample_block_match = re.search(r'SAMPLE(?:\s+\d+)?\s*\n+\s*([^\n]+)', full_text, re.IGNORECASE)
+        sample_type_val = "Unknown"
+        sample_site_val = "NA"
+        
+        if sample_block_match:
+            sample_line = sample_block_match.group(1).strip()
+            # If the line has a colon, split it into Type and Site (e.g., "Swab: Right ear mass")
+            if ':' in sample_line:
+                parts = sample_line.split(':', 1)
+                sample_type_val = parts[0].strip()
+                sample_site_val = parts[1].strip()
+            else:
+                sample_type_val = sample_line
+                
+        # Fallback if "SAMPLE" block wasn't found but "Swab:" exists elsewhere
+        if sample_site_val == "NA":
+            site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid):\s*(.+)', full_text, re.IGNORECASE)
+            if site_fallback:
+                sample_type_val = site_fallback.group(1).strip().capitalize()
+                sample_site_val = site_fallback.group(2).strip()
 
         # --- 2. ROBUST ISOLATE CHUNKING ---
         isolate_pattern = r'(?:\d+\.\s*)?(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant)\s*growth\s*(?:of\s*)?(?:-\s*)?([^\n]+)'
@@ -200,7 +216,6 @@ with tab1:
                     try:
                         recs, skipped_iso, lab_ref = parse_pdf_report(f)
                         
-                        # First, check if this entire report is a duplicate
                         if lab_ref != "NA" and lab_ref in processed_refs:
                             duplicate_files.append(f.name)
                         else:
@@ -208,7 +223,6 @@ with tab1:
                                 new_records.extend(recs)
                                 processed_refs.add(lab_ref)
                             
-                            # Log skipped isolates (even if the file had other valid ones)
                             if skipped_iso:
                                 no_data_files.append(f"- **{f.name}** (Skipped: {', '.join(skipped_iso)})")
                                 
@@ -236,7 +250,7 @@ with tab1:
                 final_df.to_excel(buf, index=False)
                 st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.ms-excel")
             
-            # --- END OF RUN REPORT (UN-ANALYZED FILES) ---
+            # --- END OF RUN REPORT ---
             st.divider()
             st.subheader("📋 Processing Summary & Skipped Data")
             
@@ -260,23 +274,19 @@ with tab2:
         df = st.session_state['processed_data']
         st.header("📊 Surveillance Insights")
         
-        # Row 1: Metrics
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Isolates", len(df))
         m2.metric("Unique Cases", df["Lab Reference"].nunique())
         
-        # Clean the column robustly
         df["Isolate"] = df["Isolate"].astype(str).str.strip()
         clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "") & (df["Isolate"] != "None")]
         m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
         st.divider()
         
-        # Row 2: Charts
         col_c1, col_c2 = st.columns(2)
         
         with col_c1:
             st.subheader("Bacterial Species Distribution")
-            
             species_counts = clean_species["Isolate"].value_counts().reset_index()
             species_counts.columns = ["Bacterial Species", "Isolate Count"]
             
