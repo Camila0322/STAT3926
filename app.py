@@ -72,10 +72,6 @@ def parse_pdf_report(file_object):
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
 
-        # --- 1. HANDLE "NO GROWTH" ---
-        if re.search(r'No\s+(?:significant\s+)?growth', raw_text, re.IGNORECASE):
-            return [], ["No Growth Detected"], lab_ref_val
-        
         species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', raw_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
@@ -90,7 +86,7 @@ def parse_pdf_report(file_object):
             sex_val = "Male" if "Male" in g_str else "Female"
             neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
         
-        # --- 2. PAGE BREAK SCRUBBER ---
+        # --- 1. PAGE BREAK SCRUBBER ---
         # Erases the massive header and footer blocks injected between pages
         clean_text = re.sub(r'SYDNEY SCHOOL OF VETERINARY SCIENCE.*?Page:\s*\d+\s*of\s*\d+', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r'Veterinary Pathology Diagnostic Services.*?CRICOS\s*00026A', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
@@ -99,7 +95,7 @@ def parse_pdf_report(file_object):
         # Privacy Redaction 
         safe_text = redact_text(clean_text)
         
-        # --- 3. IMPROVED SAMPLE TYPE & SITE DETECTION ---
+        # --- 2. IMPROVED SAMPLE TYPE & SITE DETECTION ---
         sample_block_match = re.search(r'SAMPLE(?:\s+\d+)?\s*\n+\s*([^\n]+)', safe_text, re.IGNORECASE)
         sample_type_val = "Unknown"
         sample_site_val = "NA"
@@ -119,13 +115,10 @@ def parse_pdf_report(file_object):
                 sample_type_val = site_fallback.group(1).strip().capitalize()
                 sample_site_val = site_fallback.group(2).strip()
 
-        # --- 4. ROBUST ISOLATE CHUNKING ---
-        isolate_pattern = r'(?:\d+\.\s*)?(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant)\s*growth\s*(?:of\s*)?(?:-\s*)?([^\n]+)'
+        # --- 3. UNIFIED ISOLATE CHUNKING ---
+        # Beautifully handles both standard formatting AND numbered MALDI-TOF formatting while ignoring CFU counts.
+        isolate_pattern = r'(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth[^\n]*\n*(?:[^\n]*Identification[^\n]*\n+)?(?:\d+\.\s*)?([A-Z][a-z]+\s+(?:[a-z]+|sp\.|spp\.))'
         parts = re.split(isolate_pattern, safe_text, flags=re.IGNORECASE)
-        
-        if len(parts) < 2 or "Identification" in parts[1]:
-            isolate_pattern_complex = r'(?:[A-Za-z]+)\s*growth(?:.*?Identification)?\s*\n\s*(?:\d+\.\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
-            parts = re.split(isolate_pattern_complex, safe_text, flags=re.DOTALL | re.IGNORECASE)
 
         num_isolates = len(parts) // 2
         purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
@@ -167,7 +160,7 @@ def parse_pdf_report(file_object):
                 else:
                     record[abx] = "NA"
             
-            # --- 5. FILTER & LOG SKIPPED ISOLATES ---
+            # --- 4. FILTER & LOG SKIPPED ISOLATES ---
             if has_susceptibility:
                 extracted_data.append(record)
             else:
@@ -227,10 +220,10 @@ with tab1:
                                 processed_refs.add(lab_ref)
                             
                             if skipped_iso:
-                                no_data_files.append(f"- **{f.name}** (Skipped: {', '.join(skipped_iso)})")
+                                no_data_files.append(f"- **{f.name}** (Skipped isolate: {', '.join(skipped_iso)})")
                                 
                             if not recs and not skipped_iso:
-                                no_data_files.append(f"- **{f.name}** (No isolates found)")
+                                no_data_files.append(f"- **{f.name}** (No valid isolates/growth found)")
                                 
                     except Exception as e: 
                         error_files.append(f.name)
@@ -261,7 +254,7 @@ with tab1:
                 st.warning(f"**Skipped (Duplicates):** {len(duplicate_files)} file(s) already exist in the Master Excel.\n" + "\n".join([f"- {name}" for name in duplicate_files]))
             
             if no_data_files:
-                st.info(f"**Not Recorded (No Susceptibility / No Growth):** The following isolates were found but lacked S/I/R results, so they were safely excluded from the database.\n" + "\n".join(no_data_files))
+                st.info(f"**Not Recorded (No Susceptibility / No Growth):** The following files contained isolates or samples lacking S/I/R results, so those specific records were excluded.\n" + "\n".join(no_data_files))
                 
             if error_files:
                 st.error(f"**Failed to Analyze (Format Errors):** {len(error_files)} file(s) could not be parsed automatically.\n" + "\n".join([f"- {name}" for name in error_files]))
