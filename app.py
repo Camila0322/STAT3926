@@ -61,19 +61,20 @@ def standardize_age(age_string):
     return f"{years}Y {months}M"
 
 def parse_pdf_report(file_object):
-    """Extracts metadata and susceptibility from PDF robustly."""
+    """Extracts metadata and susceptibility from PDF robustly, tracking skipped isolates."""
     extracted_data = []
+    skipped_isolates = []
+    
     with pdfplumber.open(file_object) as pdf:
         full_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # --- 1. HANDLE "NO GROWTH" ---
-        # If there is no growth, we don't want to record anything.
-        if re.search(r'No\s+(?:significant\s+)?growth', full_text, re.IGNORECASE):
-            return []
-
-        # Metadata Extraction
+        # Metadata Extraction (Needed early to check for duplicates)
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', full_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
+
+        # --- 1. HANDLE "NO GROWTH" ---
+        if re.search(r'No\s+(?:significant\s+)?growth', full_text, re.IGNORECASE):
+            return [], ["No Growth Detected"], lab_ref_val
         
         species_breed = re.search(r'(Canine|Feline)\s+([a-zA-Z\s\-]+?)(?=\s+(?:Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', full_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
@@ -100,7 +101,7 @@ def parse_pdf_report(file_object):
         sample_site_val = sample_site.group(1).strip() if sample_site else "NA"
 
         # --- 2. ROBUST ISOLATE CHUNKING ---
-        isolate_pattern = r'\d+\.\s*(?:[A-Za-z]+)\s*growth\s*-\s*([^\n]+)'
+        isolate_pattern = r'(?:\d+\.\s*)?(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant)\s*growth\s*(?:of\s*)?(?:-\s*)?([^\n]+)'
         parts = re.split(isolate_pattern, full_text, flags=re.IGNORECASE)
         
         if len(parts) < 2:
@@ -147,11 +148,13 @@ def parse_pdf_report(file_object):
                 else:
                     record[abx] = "NA"
             
-            # --- 3. FILTER OUT ISOLATES WITH NO SUSCEPTIBILITY DATA ---
+            # --- 3. FILTER & LOG SKIPPED ISOLATES ---
             if has_susceptibility:
                 extracted_data.append(record)
+            else:
+                skipped_isolates.append(isolate_species)
                 
-    return extracted_data
+    return extracted_data, skipped_isolates, lab_ref_val
 
 # --- 5. SIDEBAR DESIGN (FIXED ICON) ---
 with st.sidebar:
@@ -195,16 +198,23 @@ with tab1:
             with st.spinner("Extracting isolates..."):
                 for f in pdf_files:
                     try:
-                        recs = parse_pdf_report(f)
-                        if recs: # Has valid isolates with S/I/R data
-                            if recs[0]["Lab Reference"] not in processed_refs:
-                                new_records.extend(recs)
-                                processed_refs.add(recs[0]["Lab Reference"])
-                            else:
-                                duplicate_files.append(f.name)
+                        recs, skipped_iso, lab_ref = parse_pdf_report(f)
+                        
+                        # First, check if this entire report is a duplicate
+                        if lab_ref != "NA" and lab_ref in processed_refs:
+                            duplicate_files.append(f.name)
                         else:
-                            # Parsed successfully but had "No Growth" or no susceptibility data
-                            no_data_files.append(f.name)
+                            if recs:
+                                new_records.extend(recs)
+                                processed_refs.add(lab_ref)
+                            
+                            # Log skipped isolates (even if the file had other valid ones)
+                            if skipped_iso:
+                                no_data_files.append(f"- **{f.name}** (Skipped: {', '.join(skipped_iso)})")
+                                
+                            if not recs and not skipped_iso:
+                                no_data_files.append(f"- **{f.name}** (No isolates found)")
+                                
                     except Exception as e: 
                         error_files.append(f.name)
 
@@ -228,19 +238,19 @@ with tab1:
             
             # --- END OF RUN REPORT (UN-ANALYZED FILES) ---
             st.divider()
-            st.subheader("📋 Processing Summary & Skipped Files")
+            st.subheader("📋 Processing Summary & Skipped Data")
             
             if duplicate_files:
                 st.warning(f"**Skipped (Duplicates):** {len(duplicate_files)} file(s) already exist in the Master Excel.\n" + "\n".join([f"- {name}" for name in duplicate_files]))
             
             if no_data_files:
-                st.info(f"**Not Included (No Susceptibility / No Growth):** {len(no_data_files)} file(s) were excluded because they did not contain valid isolates with S/I/R results.\n" + "\n".join([f"- {name}" for name in no_data_files]))
+                st.info(f"**Not Recorded (No Susceptibility / No Growth):** The following isolates were found but lacked S/I/R results, so they were safely excluded from the database.\n" + "\n".join(no_data_files))
                 
             if error_files:
                 st.error(f"**Failed to Analyze (Format Errors):** {len(error_files)} file(s) could not be parsed automatically.\n" + "\n".join([f"- {name}" for name in error_files]))
 
             if not duplicate_files and not no_data_files and not error_files:
-                st.success("All uploaded files were successfully parsed and included!")
+                st.success("All uploaded files were successfully parsed and included without any missing isolates!")
 
         else:
             st.error("Please upload PDFs to begin.")
