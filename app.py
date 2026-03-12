@@ -76,7 +76,6 @@ def parse_pdf_report(file_object):
         if re.search(r'No\s+(?:significant\s+)?growth', full_text, re.IGNORECASE):
             return [], ["No Growth Detected"], lab_ref_val
         
-        # FIXED: Handles "Canine - Cocker Spaniel" and stops safely at a new line (\n)
         species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', full_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
@@ -114,12 +113,14 @@ def parse_pdf_report(file_object):
                 sample_type_val = site_fallback.group(1).strip().capitalize()
                 sample_site_val = site_fallback.group(2).strip()
 
-        # --- 2. ROBUST ISOLATE CHUNKING ---
+        # --- 2. ROBUST ISOLATE CHUNKING (FIXED FOR NUMBERED MALDI-TOF) ---
         isolate_pattern = r'(?:\d+\.\s*)?(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant)\s*growth\s*(?:of\s*)?(?:-\s*)?([^\n]+)'
         parts = re.split(isolate_pattern, full_text, flags=re.IGNORECASE)
         
-        if len(parts) < 2:
-            isolate_pattern_complex = r'(?:[A-Za-z]+)\s*growth(?:.*?Identification)?\s*\n\s*([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
+        # If it failed to split, OR if it accidentally captured the "Identification" header instead of the bacteria
+        if len(parts) < 2 or "Identification" in parts[1]:
+            # Now explicitly jumps over optional numbering like "1. " on the new line
+            isolate_pattern_complex = r'(?:[A-Za-z]+)\s*growth(?:.*?Identification)?\s*\n\s*(?:\d+\.\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
             parts = re.split(isolate_pattern_complex, full_text, flags=re.DOTALL | re.IGNORECASE)
 
         num_isolates = len(parts) // 2
