@@ -50,50 +50,62 @@ def standardize_age(age_string):
     if year_match: years = int(year_match.group(1))
     month_match = re.search(r'(\d+)\s*(m|month|months)', age_string, re.IGNORECASE)
     if month_match: months = int(month_match.group(1))
-    if years == 0 and months == 0: return age_string 
+    
+    if years == 0 and months == 0:
+        week_match = re.search(r'(\d+)\s*(w|week|weeks)', age_string, re.IGNORECASE)
+        if week_match:
+            months = int(week_match.group(1)) // 4
+        else:
+            return age_string 
+            
     return f"{years}Y {months}M"
 
 def parse_pdf_report(file_object):
-    """Extracts metadata and susceptibility from PDF."""
+    """Extracts metadata and susceptibility from PDF robustly."""
     extracted_data = []
     with pdfplumber.open(file_object) as pdf:
         full_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
+        # --- 1. HANDLE "NO GROWTH" ---
+        # If there is no growth, we don't want to record anything.
+        if re.search(r'No\s+(?:significant\s+)?growth', full_text, re.IGNORECASE):
+            return []
+
         # Metadata Extraction
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', full_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
         
-        species_breed = re.search(r'(Canine|Feline)\s+([a-zA-Z\s\-]+?)(?=\s+(?:Male|Female|\d+\s*Years?|Our Ref|Your Ref|$))', full_text, re.IGNORECASE)
+        species_breed = re.search(r'(Canine|Feline)\s+([a-zA-Z\s\-]+?)(?=\s+(?:Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', full_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
         
-        age_raw = re.search(r'(\d+\s*Years?)', full_text)
+        age_raw = re.search(r'(\d+\s*(?:Years?|Months?|Weeks?))', full_text, re.IGNORECASE)
         age_val = standardize_age(age_raw.group(1)) if age_raw else "NA"
         
-        gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', full_text)
+        gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', full_text, re.IGNORECASE)
         sex_val, neutered_val = "NA", "NA"
         if gender_raw:
-            g_str = gender_raw.group(1)
+            g_str = gender_raw.group(1).title()
             sex_val = "Male" if "Male" in g_str else "Female"
             neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
         
         # Privacy Redaction for metadata only
         safe_text = redact_text(full_text)
         
-        # Dynamic Sample Type Detection (Jumps over blank lines)
+        # Dynamic Sample Type Detection
         sample_type_match = re.search(r'SAMPLE\s*\n+\s*([^\n]+)', full_text)
         sample_type_val = sample_type_match.group(1).strip() if sample_type_match else "Unknown"
 
         sample_site = re.search(r'Swab:\s*(.+)', full_text)
         sample_site_val = sample_site.group(1).strip() if sample_site else "NA"
 
-        # --- IMPROVED Isolate Chunking Logic (UNREDACTED text) ---
-        isolate_pattern = r'\d+\.\s*(?:Heavy|Moderate|Light)\s*growth\s*-\s*([^\n]+)'
-        parts = re.split(isolate_pattern, full_text)
+        # --- 2. ROBUST ISOLATE CHUNKING ---
+        isolate_pattern = r'\d+\.\s*(?:[A-Za-z]+)\s*growth\s*-\s*([^\n]+)'
+        parts = re.split(isolate_pattern, full_text, flags=re.IGNORECASE)
         
         if len(parts) < 2:
-            isolate_pattern_complex = r'(?:Heavy|Moderate|Light)\s*growth(?:.*?Identification)?\s*\n\s*([A-Z][a-z]+\s+[a-z]+)'
-            parts = re.split(isolate_pattern_complex, full_text, flags=re.DOTALL)
+            isolate_pattern_complex = r'(?:[A-Za-z]+)\s*growth(?:.*?Identification)?\s*\n\s*([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
+            parts = re.split(isolate_pattern_complex, full_text, flags=re.DOTALL | re.IGNORECASE)
 
         num_isolates = len(parts) // 2
         purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
@@ -119,18 +131,26 @@ def parse_pdf_report(file_object):
                 "Purity": purity_val, "Isolate": isolate_species
             }
             
+            has_susceptibility = False
+            
             for abx in antibiotics_to_check:
                 abx_parts = re.split(r'[\s/]+', abx)
                 abx_pattern = r'[\s/]*'.join([re.escape(p) for p in abx_parts])
                 
-                match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b', isolate_text, re.IGNORECASE)
+                match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\*?\b', isolate_text, re.IGNORECASE)
                 
                 if match:
-                    record[abx] = match.group(1).upper()[0]
+                    val = match.group(1).upper()[0]
+                    record[abx] = val
+                    if val in ['S', 'I', 'R']:
+                        has_susceptibility = True
                 else:
                     record[abx] = "NA"
-                    
-            extracted_data.append(record)
+            
+            # --- 3. FILTER OUT ISOLATES WITH NO SUSCEPTIBILITY DATA ---
+            if has_susceptibility:
+                extracted_data.append(record)
+                
     return extracted_data
 
 # --- 5. SIDEBAR DESIGN (FIXED ICON) ---
@@ -168,15 +188,25 @@ with tab1:
                 processed_refs = set(master_df["Lab Reference"].dropna().unique())
 
             new_records = []
+            duplicate_files = []
+            no_data_files = []
+            error_files = []
+
             with st.spinner("Extracting isolates..."):
                 for f in pdf_files:
                     try:
                         recs = parse_pdf_report(f)
-                        if recs and recs[0]["Lab Reference"] not in processed_refs:
-                            new_records.extend(recs)
-                            processed_refs.add(recs[0]["Lab Reference"])
+                        if recs: # Has valid isolates with S/I/R data
+                            if recs[0]["Lab Reference"] not in processed_refs:
+                                new_records.extend(recs)
+                                processed_refs.add(recs[0]["Lab Reference"])
+                            else:
+                                duplicate_files.append(f.name)
+                        else:
+                            # Parsed successfully but had "No Growth" or no susceptibility data
+                            no_data_files.append(f.name)
                     except Exception as e: 
-                        st.error(f"Error processing {f.name}: {e}")
+                        error_files.append(f.name)
 
             if new_records or not master_df.empty:
                 new_batch_df = pd.DataFrame(new_records)
@@ -187,12 +217,31 @@ with tab1:
                     colors = {'S': 'background-color: #C6EFCE; color: #006100', 'I': 'background-color: #FFEB9C; color: #9C5700', 'R': 'background-color: #FFC7CE; color: #9C0006'}
                     return colors.get(val, '')
 
-                st.success(f"Successfully processed {len(new_records)} isolates.")
+                if new_records:
+                    st.success(f"Successfully processed {len(new_records)} isolates from valid reports.")
+                
                 st.dataframe(final_df.style.applymap(color_sri), use_container_width=True)
                 
                 buf = io.BytesIO()
                 final_df.to_excel(buf, index=False)
                 st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.ms-excel")
+            
+            # --- END OF RUN REPORT (UN-ANALYZED FILES) ---
+            st.divider()
+            st.subheader("📋 Processing Summary & Skipped Files")
+            
+            if duplicate_files:
+                st.warning(f"**Skipped (Duplicates):** {len(duplicate_files)} file(s) already exist in the Master Excel.\n" + "\n".join([f"- {name}" for name in duplicate_files]))
+            
+            if no_data_files:
+                st.info(f"**Not Included (No Susceptibility / No Growth):** {len(no_data_files)} file(s) were excluded because they did not contain valid isolates with S/I/R results.\n" + "\n".join([f"- {name}" for name in no_data_files]))
+                
+            if error_files:
+                st.error(f"**Failed to Analyze (Format Errors):** {len(error_files)} file(s) could not be parsed automatically.\n" + "\n".join([f"- {name}" for name in error_files]))
+
+            if not duplicate_files and not no_data_files and not error_files:
+                st.success("All uploaded files were successfully parsed and included!")
+
         else:
             st.error("Please upload PDFs to begin.")
 
@@ -208,7 +257,7 @@ with tab2:
         
         # Clean the column robustly
         df["Isolate"] = df["Isolate"].astype(str).str.strip()
-        clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "")]
+        clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "") & (df["Isolate"] != "None")]
         m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
         st.divider()
         
@@ -218,7 +267,6 @@ with tab2:
         with col_c1:
             st.subheader("Bacterial Species Distribution")
             
-            # FIXED CHART: Removed color argument to stop Plotly spacing bugs
             species_counts = clean_species["Isolate"].value_counts().reset_index()
             species_counts.columns = ["Bacterial Species", "Isolate Count"]
             
@@ -229,10 +277,9 @@ with tab2:
                 text="Isolate Count", 
                 template="plotly_white"
             )
-            # Apply professional styling and force text outside
             fig_species.update_traces(
                 textposition='outside', 
-                marker_color='#002b5c'  # USYD Dark Blue
+                marker_color='#002b5c'  
             )
             fig_species.update_layout(
                 xaxis={'categoryorder':'total descending'},
