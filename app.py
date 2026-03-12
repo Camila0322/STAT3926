@@ -61,7 +61,7 @@ def standardize_age(age_string):
     return f"{years}Y {months}M"
 
 def parse_pdf_report(file_object):
-    """Extracts metadata and susceptibility from PDF robustly, tracking skipped isolates."""
+    """Extracts metadata and susceptibility from PDF robustly, handling multiple samples per file."""
     extracted_data = []
     skipped_isolates = []
     
@@ -69,17 +69,15 @@ def parse_pdf_report(file_object):
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
         # --- 1. PAGE BREAK SCRUBBER ---
-        # Erases the massive header and footer blocks injected between pages
+        # Erases the massive header and footer blocks injected between pages (Crucial for McGee & Cherry)
         clean_text = re.sub(r'SYDNEY SCHOOL OF VETERINARY SCIENCE.*?Page:\s*\d+\s*of\s*\d+', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r'Veterinary Pathology Diagnostic Services.*?CRICOS\s*00026A', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r'University of Sydney\s*\n\s*NSW 2006 Australia', '', clean_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'FACULTY OF VETERINARY SCIENCE.*?Page:\s*\d+\s*of\s*\d+', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
 
         # Metadata Extraction
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', clean_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
-
-        if re.search(r'No\s+(?:significant\s+)?growth', clean_text, re.IGNORECASE):
-            return [], ["No Growth Detected"], lab_ref_val
         
         species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', clean_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
@@ -95,84 +93,89 @@ def parse_pdf_report(file_object):
             sex_val = "Male" if "Male" in g_str else "Female"
             neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
         
-        # --- 2. IMPROVED SAMPLE TYPE & SITE DETECTION ---
-        sample_block_match = re.search(r'SAMPLE(?:\s+\d+)?\s*\n+\s*([^\n]+)', clean_text, re.IGNORECASE)
-        sample_type_val = "Unknown"
-        sample_site_val = "NA"
+        # Privacy Redaction 
+        safe_text = redact_text(clean_text)
         
-        if sample_block_match:
-            sample_line = sample_block_match.group(1).strip()
-            if ':' in sample_line:
-                parts_sample = sample_line.split(':', 1)
-                sample_type_val = parts_sample[0].strip()
-                sample_site_val = parts_sample[1].strip()
-            else:
-                sample_type_val = sample_line
-                
-        if sample_site_val == "NA":
-            site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid):\s*(.+)', clean_text, re.IGNORECASE)
-            if site_fallback:
-                sample_type_val = site_fallback.group(1).strip().capitalize()
-                sample_site_val = site_fallback.group(2).strip()
-
-        # --- 3. ROBUST MULTI-ISOLATE CHUNKING ---
-        # Master pattern handles "Heavy growth", "1. Species", and "Identification \n Species"
-        isolate_pattern = r'(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:-\s*)?|\b[1-9]\.\s+|Identification\s*\n+\s*)([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
-        parts = re.split(isolate_pattern, clean_text, flags=re.IGNORECASE)
-
-        num_isolates = len(parts) // 2
-        purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
+        # --- 2. MULTI-SAMPLE SPLITTING LOGIC (Crucial for Timber Rex) ---
+        # Splits the document into chunks based on the word "SAMPLE"
+        sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', safe_text, flags=re.IGNORECASE)
+        
+        # If no "SAMPLE" keyword is found, treat the whole document as one block
+        blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [safe_text]
 
         antibiotics_to_check = [
-            "Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid",
-            "Ampicillin", "Amoxicillin/Clavulanic acid", "Amikacin",
-            "Oxacillin", "Gentamicin (High Level)", "Gentamicin", "Imipenem", 
-            "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", 
-            "Erythromycin", "Cefoxitin", "Rifampicin", "Doxycycline", 
-            "Cefalexin", "Cefazolin", "Cefovecin", "Neomycin", "Ceftiofur",
-            "Tobramycin", "Enrofloxacin", "Polymyxin B", "Marbofloxacin", 
-            "Fusidic acid", "Nitrofurantoin"
+            "Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid", "Ampicillin", 
+            "Amoxicillin/Clavulanic acid", "Amikacin", "Oxacillin", "Gentamicin (High Level)", 
+            "Gentamicin", "Imipenem", "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", 
+            "Erythromycin", "Cefoxitin", "Rifampicin", "Doxycycline", "Cefalexin", "Cefazolin", 
+            "Cefovecin", "Neomycin", "Ceftiofur", "Tobramycin", "Enrofloxacin", "Polymyxin B", 
+            "Marbofloxacin", "Fusidic acid", "Nitrofurantoin"
         ]
-        
-        for i in range(1, len(parts), 2):
-            isolate_species = parts[i].strip()
+
+        for block in blocks_to_process:
+            # 1. Extract Sample Type & Site strictly for THIS block
+            sample_type_val = "Unknown"
+            sample_site_val = "NA"
             
-            # CRITICAL FIX: Append the final chunk of the document to ensure the SUSCEPTIBILITY table is searched
-            # even if this specific isolate was listed far above it in the document.
-            isolate_text = parts[i+1] + "\n" + parts[-1]
+            first_line = block.strip().split('\n')[0].strip()
+            if ':' in first_line:
+                parts_sample = first_line.split(':', 1)
+                sample_type_val = parts_sample[0].strip()
+                sample_site_val = parts_sample[1].strip()
+            elif first_line and len(first_line) < 30: # Fallback if it's just a short word like "Urine"
+                sample_type_val = first_line
             
-            record = {
-                "Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, 
-                "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, 
-                "Sample Type": sample_type_val, "Site": sample_site_val, 
-                "Purity": purity_val, "Isolate": isolate_species
-            }
+            # Check for "No growth" explicitly in this sample block
+            if re.search(r'No\s+(?:significant\s+)?growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE):
+                continue # Skip this specific block, but keep checking others
+
+            # 2. Extract isolates for THIS block
+            isolate_pattern = r'(?:\d+\.\s*)?(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:-\s*)?([^\n]+)'
+            parts = re.split(isolate_pattern, block, flags=re.IGNORECASE)
             
-            has_susceptibility = False
+            # If standard matching grabs CFU counts (Dundby) or Identification headers (McGee), use advanced fallback
+            if len(parts) < 2 or "Identification" in parts[1] or "CFU" in parts[1]:
+                isolate_pattern_complex = r'(?:[A-Za-z]+)\s*growth(?:.*?Identification)?\s*\n\s*(?:\d+\.\s*)?(?:(?:Heavy|Moderate|Light|Mixed)\s*growth\s*-\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
+                parts = re.split(isolate_pattern_complex, block, flags=re.DOTALL | re.IGNORECASE)
+
+            num_isolates = len(parts) // 2
+            purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
             
-            for abx in antibiotics_to_check:
-                abx_parts = re.split(r'[\s/]+', abx)
-                abx_pattern = r'[\s/]*'.join([re.escape(p) for p in abx_parts])
+            for i in range(1, len(parts), 2):
+                isolate_species = parts[i].strip()
+                isolate_text = parts[i+1] + "\n" + parts[-1] # Append bottom of block to ensure Susceptibility table is captured
                 
-                # S/I/R Search is now safely run on clean_text so antibiotics aren't redacted
-                match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\*?\b', isolate_text, re.IGNORECASE)
+                record = {
+                    "Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, 
+                    "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, 
+                    "Sample Type": sample_type_val, "Site": sample_site_val, 
+                    "Purity": purity_val, "Isolate": isolate_species
+                }
                 
-                if match:
-                    val = match.group(1).upper()[0]
-                    record[abx] = val
-                    if val in ['S', 'I', 'R']:
-                        has_susceptibility = True
+                has_susceptibility = False
+                
+                for abx in antibiotics_to_check:
+                    abx_parts = re.split(r'[\s/]+', abx)
+                    abx_pattern = r'[\s/]*'.join([re.escape(p) for p in abx_parts])
+                    
+                    match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\*?\b', isolate_text, re.IGNORECASE)
+                    
+                    if match:
+                        val = match.group(1).upper()[0]
+                        record[abx] = val
+                        if val in ['S', 'I', 'R']:
+                            has_susceptibility = True
+                    else:
+                        record[abx] = "NA"
+                
+                if has_susceptibility:
+                    extracted_data.append(record)
                 else:
-                    record[abx] = "NA"
-            
-            if has_susceptibility:
-                extracted_data.append(record)
-            else:
-                skipped_isolates.append(isolate_species)
+                    skipped_isolates.append(f"{sample_type_val} - {isolate_species}")
                 
     return extracted_data, skipped_isolates, lab_ref_val
 
-# --- 5. SIDEBAR DESIGN (FIXED ICON) ---
+# --- 5. SIDEBAR DESIGN ---
 with st.sidebar:
     st.markdown("""
         <div style="text-align: center; margin-bottom: 20px;">
@@ -187,7 +190,7 @@ with st.sidebar:
     st.write("3. ⚡ **Process** & Redact")
     st.write("4. 📥 **Download** Final Sheet")
     st.markdown("---")
-    st.success("🔒 **Privacy Mode Active:** Vets and Owner names are automatically redacted in system memory before output.")
+    st.success("🔒 **Privacy Mode Active:** Vets and Owner names are automatically redacted.")
     st.caption("Developed for Katherine Muscat | STAT3926 Project")
 
 # --- 6. MAIN INTERFACE TABS ---
@@ -224,13 +227,13 @@ with tab1:
                                 processed_refs.add(lab_ref)
                             
                             if skipped_iso:
-                                no_data_files.append(f"- **{f.name}** (Skipped isolate: {', '.join(skipped_iso)})")
+                                no_data_files.append(f"- **{f.name}** (Skipped isolates lacking S/I/R: {', '.join(skipped_iso)})")
                                 
                             if not recs and not skipped_iso:
                                 no_data_files.append(f"- **{f.name}** (No valid isolates/growth found)")
                                 
                     except Exception as e: 
-                        error_files.append(f.name)
+                        error_files.append(f"{f.name} ({str(e)})")
 
             if new_records or not master_df.empty:
                 new_batch_df = pd.DataFrame(new_records)
@@ -258,7 +261,7 @@ with tab1:
                 st.warning(f"**Skipped (Duplicates):** {len(duplicate_files)} file(s) already exist in the Master Excel.\n" + "\n".join([f"- {name}" for name in duplicate_files]))
             
             if no_data_files:
-                st.info(f"**Not Recorded (No Susceptibility / No Growth):** The following files contained isolates or samples lacking S/I/R results, so those specific records were excluded.\n" + "\n".join(no_data_files))
+                st.info(f"**Not Recorded (No Susceptibility / No Growth):** The following files contained samples lacking S/I/R results, so those specific records were safely excluded.\n" + "\n".join(no_data_files))
                 
             if error_files:
                 st.error(f"**Failed to Analyze (Format Errors):** {len(error_files)} file(s) could not be parsed automatically.\n" + "\n".join([f"- {name}" for name in error_files]))
