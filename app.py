@@ -68,57 +68,57 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # Metadata Extraction (Run on raw text before scrubbing)
-        lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
-        lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
-
-        species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', raw_text, re.IGNORECASE)
-        species_val = species_breed.group(1).strip() if species_breed else "NA"
-        breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
-        
-        age_raw = re.search(r'(\d+\s*(?:Years?|Months?|Weeks?))', raw_text, re.IGNORECASE)
-        age_val = standardize_age(age_raw.group(1)) if age_raw else "NA"
-        
-        gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', raw_text, re.IGNORECASE)
-        sex_val, neutered_val = "NA", "NA"
-        if gender_raw:
-            g_str = gender_raw.group(1).title()
-            sex_val = "Male" if "Male" in g_str else "Female"
-            neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
-        
         # --- 1. PAGE BREAK SCRUBBER ---
         # Erases the massive header and footer blocks injected between pages
         clean_text = re.sub(r'SYDNEY SCHOOL OF VETERINARY SCIENCE.*?Page:\s*\d+\s*of\s*\d+', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r'Veterinary Pathology Diagnostic Services.*?CRICOS\s*00026A', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r'University of Sydney\s*\n\s*NSW 2006 Australia', '', clean_text, flags=re.IGNORECASE)
 
-        # Privacy Redaction 
-        safe_text = redact_text(clean_text)
+        # Metadata Extraction
+        lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', clean_text)
+        lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
+
+        if re.search(r'No\s+(?:significant\s+)?growth', clean_text, re.IGNORECASE):
+            return [], ["No Growth Detected"], lab_ref_val
+        
+        species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', clean_text, re.IGNORECASE)
+        species_val = species_breed.group(1).strip() if species_breed else "NA"
+        breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
+        
+        age_raw = re.search(r'(\d+\s*(?:Years?|Months?|Weeks?))', clean_text, re.IGNORECASE)
+        age_val = standardize_age(age_raw.group(1)) if age_raw else "NA"
+        
+        gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', clean_text, re.IGNORECASE)
+        sex_val, neutered_val = "NA", "NA"
+        if gender_raw:
+            g_str = gender_raw.group(1).title()
+            sex_val = "Male" if "Male" in g_str else "Female"
+            neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
         
         # --- 2. IMPROVED SAMPLE TYPE & SITE DETECTION ---
-        sample_block_match = re.search(r'SAMPLE(?:\s+\d+)?\s*\n+\s*([^\n]+)', safe_text, re.IGNORECASE)
+        sample_block_match = re.search(r'SAMPLE(?:\s+\d+)?\s*\n+\s*([^\n]+)', clean_text, re.IGNORECASE)
         sample_type_val = "Unknown"
         sample_site_val = "NA"
         
         if sample_block_match:
             sample_line = sample_block_match.group(1).strip()
             if ':' in sample_line:
-                parts = sample_line.split(':', 1)
-                sample_type_val = parts[0].strip()
-                sample_site_val = parts[1].strip()
+                parts_sample = sample_line.split(':', 1)
+                sample_type_val = parts_sample[0].strip()
+                sample_site_val = parts_sample[1].strip()
             else:
                 sample_type_val = sample_line
                 
         if sample_site_val == "NA":
-            site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid):\s*(.+)', safe_text, re.IGNORECASE)
+            site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid):\s*(.+)', clean_text, re.IGNORECASE)
             if site_fallback:
                 sample_type_val = site_fallback.group(1).strip().capitalize()
                 sample_site_val = site_fallback.group(2).strip()
 
-        # --- 3. UNIFIED ISOLATE CHUNKING ---
-        # Beautifully handles both standard formatting AND numbered MALDI-TOF formatting while ignoring CFU counts.
-        isolate_pattern = r'(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth[^\n]*\n*(?:[^\n]*Identification[^\n]*\n+)?(?:\d+\.\s*)?([A-Z][a-z]+\s+(?:[a-z]+|sp\.|spp\.))'
-        parts = re.split(isolate_pattern, safe_text, flags=re.IGNORECASE)
+        # --- 3. ROBUST MULTI-ISOLATE CHUNKING ---
+        # Master pattern handles "Heavy growth", "1. Species", and "Identification \n Species"
+        isolate_pattern = r'(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:-\s*)?|\b[1-9]\.\s+|Identification\s*\n+\s*)([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
+        parts = re.split(isolate_pattern, clean_text, flags=re.IGNORECASE)
 
         num_isolates = len(parts) // 2
         purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
@@ -136,7 +136,11 @@ def parse_pdf_report(file_object):
         
         for i in range(1, len(parts), 2):
             isolate_species = parts[i].strip()
-            isolate_text = parts[i+1]
+            
+            # CRITICAL FIX: Append the final chunk of the document to ensure the SUSCEPTIBILITY table is searched
+            # even if this specific isolate was listed far above it in the document.
+            isolate_text = parts[i+1] + "\n" + parts[-1]
+            
             record = {
                 "Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, 
                 "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, 
@@ -150,6 +154,7 @@ def parse_pdf_report(file_object):
                 abx_parts = re.split(r'[\s/]+', abx)
                 abx_pattern = r'[\s/]*'.join([re.escape(p) for p in abx_parts])
                 
+                # S/I/R Search is now safely run on clean_text so antibiotics aren't redacted
                 match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\*?\b', isolate_text, re.IGNORECASE)
                 
                 if match:
@@ -160,7 +165,6 @@ def parse_pdf_report(file_object):
                 else:
                     record[abx] = "NA"
             
-            # --- 4. FILTER & LOG SKIPPED ISOLATES ---
             if has_susceptibility:
                 extracted_data.append(record)
             else:
@@ -168,7 +172,7 @@ def parse_pdf_report(file_object):
                 
     return extracted_data, skipped_isolates, lab_ref_val
 
-# --- 5. SIDEBAR DESIGN ---
+# --- 5. SIDEBAR DESIGN (FIXED ICON) ---
 with st.sidebar:
     st.markdown("""
         <div style="text-align: center; margin-bottom: 20px;">
@@ -183,7 +187,7 @@ with st.sidebar:
     st.write("3. ⚡ **Process** & Redact")
     st.write("4. 📥 **Download** Final Sheet")
     st.markdown("---")
-    st.success("🔒 **Privacy Mode Active:** Vets and Owner names are automatically redacted.")
+    st.success("🔒 **Privacy Mode Active:** Vets and Owner names are automatically redacted in system memory before output.")
     st.caption("Developed for Katherine Muscat | STAT3926 Project")
 
 # --- 6. MAIN INTERFACE TABS ---
