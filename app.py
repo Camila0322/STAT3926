@@ -61,7 +61,7 @@ def standardize_age(age_string):
     return f"{years}Y {months}M"
 
 def clean_boilerplate(text):
-    """Safely erases repeating PDF headers/footers line by line without destroying clinical data."""
+    """Safely erases repeating PDF headers/footers line by line, stitching page breaks together."""
     lines = text.split('\n')
     scrubbed_lines = []
     junk_strings = [
@@ -69,25 +69,33 @@ def clean_boilerplate(text):
         "VETERINARY PATHOLOGY DIAGNOSTIC SERVICES", "THE UNIVERSITY OF", "SYDNEY",
         "University of Sydney", "NSW 2006 Australia", "NSW 2006 AUSTRALIA",
         "CRICOS 00026A", "ABN 15 211 513 464", "W WWW.SYDNEY.EDU.AU", "W: www.sydney.edu.au",
-        "Veterinary Pathology Diagnostic Services"
+        "Veterinary Pathology Diagnostic Services", "FINAL REPORT", "MICROBIOLOGY REPORT"
     ]
+    
     for line in lines:
-        if any(j.lower() in line.lower() for j in junk_strings) \
-           or re.search(r'Page:\s*\d+\s*of\s*\d+', line, re.IGNORECASE) \
-           or re.search(r'T[:\s]*02\s*9351\s*7456', line, re.IGNORECASE):
+        line_clean = line.strip()
+        if not line_clean:
             continue
-        scrubbed_lines.append(line)
+            
+        # Erase headers, footers, phone numbers, and page numbers
+        if any(j.lower() in line_clean.lower() for j in junk_strings): continue
+        if re.search(r'Page:\s*\d+\s*of\s*\d+', line_clean, re.IGNORECASE): continue
+        if re.search(r'[TF][: \s]*02\s*9351\s*74(?:56|21)', line_clean, re.IGNORECASE): continue
+        if re.search(r'(?:Report|Arrival|Collected)\s*date:', line_clean, re.IGNORECASE): continue
+            
+        scrubbed_lines.append(line_clean)
+        
     return "\n".join(scrubbed_lines)
 
 def parse_pdf_report(file_object):
-    """Extracts metadata and susceptibility from PDF robustly, handling multiple samples per file."""
+    """Extracts metadata and susceptibility from PDF using the Anchored Block Method."""
     extracted_data = []
     skipped_isolates = []
     
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # 1. Boilerplate Scrubber
+        # 1. Line-by-Line Boilerplate Scrubber
         clean_text = clean_boilerplate(raw_text)
 
         # 2. Metadata Extraction
@@ -125,7 +133,7 @@ def parse_pdf_report(file_object):
         ]
 
         for block in blocks_to_process:
-            # Check for explicitly negative cultures in this block (Timber Rex fix)
+            # Check for explicitly negative cultures in this block (Timber Rex)
             if re.search(r'No\s+(?:significant\s+)?growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE):
                 continue
 
@@ -146,26 +154,41 @@ def parse_pdf_report(file_object):
                     sample_type_val = site_fallback.group(1).strip().capitalize()
                     sample_site_val = site_fallback.group(2).strip()
 
-            # --- 4. THE BRIDGING REGEX (Master Isolate Extractor) ---
-            # Finds "Heavy growth" OR "1.", bridges up to 150 chars, and captures the species.
-            prefix = r'(?:(?:[Hh]eavy|[Mm]oderate|[Ll]ight|[Ss]canty|[Pp]rofuse|[Aa]bundant|[Mm]ixed)\s*growth|\b[1-9]\s*\.)'
-            isolate_pattern = rf'{prefix}(?:.{{0,150}}?)\b([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\b'
+            # --- 4. THE ANCHORED ISOLATE FINDER ---
+            isolate_names = []
             
-            # Using DOTALL allows it to jump over \n and MALDI-TOF lines
-            parts = re.split(isolate_pattern, block, flags=re.DOTALL)
+            # Rule A: Is it immediately before the word SUSCEPTIBILITY? (Crucial for page breaks)
+            for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block):
+                isolate_names.append(m.group(1))
+                
+            # Rule B: Is it immediately after MALDI-TOF Identification?
+            for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:[1-9]\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*-\s*)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
+                isolate_names.append(m.group(1))
 
-            num_isolates = len(parts) // 2
-            purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
+            # Rule C: Is it in a numbered list? (1. Pseudomonas)
+            for m in re.finditer(r'\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*-\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
+                isolate_names.append(m.group(1))
+
+            # Deduplicate the found isolates while ignoring grammatical artifacts
+            unique_isolates = []
+            for name in isolate_names:
+                name = name.strip()
+                if name not in unique_isolates and "Gram" not in name and "Identification" not in name and "growth" not in name.lower():
+                    unique_isolates.append(name)
+                    
+            # Sort isolates by their first appearance in the document to maintain order
+            unique_isolates.sort(key=lambda x: block.find(x))
+
+            purity_val = "Mixed" if len(unique_isolates) > 1 else "Pure" if len(unique_isolates) == 1 else "NA"
             
-            for i in range(1, len(parts), 2):
-                isolate_species = parts[i].strip()
-                
-                # Filter out accidental grammatical matches like "Gram negative"
-                if "Gram" in isolate_species or "Identification" in isolate_species:
-                    continue
-                
-                # Append the bottom of the document to ensure S/I/R table is scanned
-                isolate_text = parts[i+1] + "\n" + parts[-1] 
+            # Extract the text boundary for each specific isolate to find its S/I/R table
+            for i, isolate_species in enumerate(unique_isolates):
+                start_idx = block.find(isolate_species)
+                if i + 1 < len(unique_isolates):
+                    end_idx = block.find(unique_isolates[i+1], start_idx + len(isolate_species))
+                    isolate_text = block[start_idx:end_idx]
+                else:
+                    isolate_text = block[start_idx:]
                 
                 record = {
                     "Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, 
@@ -249,7 +272,7 @@ with tab1:
                                 processed_refs.add(lab_ref)
                             
                             if skipped_iso:
-                                no_data_files.append(f"- **{f.name}** (Skipped isolates lacking S/I/R: {', '.join(skipped_iso)})")
+                                no_data_files.append(f"- **{f.name}** (Skipped anaerobes/isolates lacking S/I/R: {', '.join(skipped_iso)})")
                                 
                             if not recs and not skipped_iso:
                                 no_data_files.append(f"- **{f.name}** (No bacterial growth / Negative culture)")
