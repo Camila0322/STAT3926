@@ -71,14 +71,22 @@ def parse_pdf_report(file_object):
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
+        
         species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|Our Ref|$))', raw_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
+        
         age_raw = re.search(r'(\d+\s*(?:Years?|Months?|Weeks?))', raw_text, re.IGNORECASE)
         age_val = standardize_age(age_raw.group(1)) if age_raw else "NA"
-        gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', raw_text, re.IGNORECASE)
-        sex_val, neutered_val = ("Male", "Yes") if gender_raw and "Neutered" in gender_raw.group(1) else ("Female", "Yes") if gender_raw and "Spayed" in gender_raw.group(1) else (gender_raw.group(1), "No") if gender_raw else ("NA", "NA")
         
+        gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', raw_text, re.IGNORECASE)
+        if gender_raw:
+            g_str = gender_raw.group(1).title()
+            sex_val = "Male" if "Male" in g_str else "Female"
+            neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
+        else:
+            sex_val, neutered_val = "NA", "NA"
+
         clean_text = clean_boilerplate(raw_text)
         sample_blocks = re.split(r'^SAMPLE(?:\s+\d+)?\s*$', clean_text, flags=re.IGNORECASE | re.MULTILINE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
@@ -88,24 +96,29 @@ def parse_pdf_report(file_object):
         for block in blocks_to_process:
             sample_line = block.strip().split('\n')[0].strip()
             sample_type_val, sample_site_val = (sample_line.split(':', 1) + ["NA"])[:2] if ':' in sample_line else (sample_line, "NA")
-            if sample_site_val == "NA":
-                site_fallback = re.search(r'(Swab|Urine|Tissue|Implant):\s*(.+)', block, re.IGNORECASE)
-                if site_fallback: sample_type_val, sample_site_val = site_fallback.groups()
             
+            if sample_site_val == "NA":
+                site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid|Implant):\s*(.+)', block, re.IGNORECASE)
+                if site_fallback: sample_type_val, sample_site_val = site_fallback.groups()
+
             sample_site_val = redact_text(sample_site_val)
+
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
+            
             if not isolate_names:
-                for m in re.finditer(r'\b(Staphylococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE): isolate_names.append(m.group(0))
+                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
+                    isolate_names.append(m.group(0))
 
             unique_isolates = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
-            for i, isolate_species in enumerate(unique_isolates):
-                start_idx = block.find(isolate_species)
-                end_idx = block.find(unique_isolates[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_isolates) else len(block)
+            for i, iso in enumerate(unique_isolates):
+                start_idx = block.find(iso)
+                end_idx = block.find(unique_isolates[i+1], start_idx + len(iso)) if i + 1 < len(unique_isolates) else len(block)
                 isolate_text = block[start_idx:end_idx]
-                record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val.strip(), "Isolate": isolate_species}
+                
+                record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val.strip(), "Isolate": iso}
                 has_sir = False
                 for abx in antibiotics_to_check:
                     abx_esc = re.escape(abx).replace(r'Amoxicillin', r'Amox[iy]cillin').replace(r'Cefalexin', r'(?:Cefalexin|Cephalexin)')
@@ -114,64 +127,76 @@ def parse_pdf_report(file_object):
                         record[abx] = match.group(1).upper()[0]
                         has_sir = True
                     else: record[abx] = "NA"
+                
                 if has_sir: extracted_data.append(record)
-                else: skipped_isolates.append(f"{sample_type_val.strip()} - {isolate_species}")
+                else: skipped_isolates.append(f"{sample_type_val.strip()} - {iso}")
+                
     return extracted_data, skipped_isolates, lab_ref_val
 
-# --- 5. SIDEBAR DESIGN ---
-with st.sidebar:
-    st.markdown("<div style='text-align: center;'><div style='font-size: 50px;'>🏛️</div><h2 style='color: #002b5c;'>USYD Vet Path</h2></div>", unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown("### 🛠️ Extraction Workflow")
-    st.write("1. 📂 **Upload** Master Excel")
-    st.write("2. 📄 **Drop** PDF Reports")
-    st.write("3. ⚡ **Process** & Redact")
-    st.write("4. 📥 **Download** Final Sheet")
-    st.success("🔒 **Privacy Mode Active**")
-
-# --- 6. MAIN INTERFACE ---
+# --- 5. INTERFACE ---
 st.title("🔬 AMR National Surveillance Pipeline")
 tab1, tab2 = st.tabs(["🚀 Data Processing", "📊 Live Analytics"])
 
 with tab1:
     c1, c2 = st.columns(2)
-    master_file = c1.file_uploader("1. Master Dataset", type=["xlsx"])
-    pdf_files = c2.file_uploader("2. PDF Reports", type=["pdf"], accept_multiple_files=True)
-    if st.button("🚀 Process & Synchronize"):
+    master_file = c1.file_uploader("1. Existing Master Dataset (Excel)", type=["xlsx"])
+    pdf_files = c2.file_uploader("2. New PDF Reports", type=["pdf"], accept_multiple_files=True)
+
+    if st.button("🚀 Process Reports"):
         if pdf_files:
             master_df = pd.read_excel(master_file) if master_file else pd.DataFrame()
-            new_records, skipped = [], []
+            new_recs, skipped_summary = [], []
             total = len(pdf_files)
             pb = st.progress(0)
+            
             for i, f in enumerate(pdf_files):
-                pb.progress((i)/total, text=f"Processing: {f.name}")
-                recs, skip_iso, ref = parse_pdf_report(f)
-                new_records.extend(recs)
-                if skip_iso: skipped.append(f"**{f.name}** (Excluded: {', '.join(skip_iso)})")
-            pb.progress(1.0, text="✅ Done!")
+                pb.progress((i)/total, text=f"Scanning: {f.name}")
+                recs, skip, ref = parse_pdf_report(f)
+                new_recs.extend(recs)
+                if skip: skipped_summary.append(f"**{f.name}** (Excluded: {', '.join(skip)})")
             
-            final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
-            st.session_state['processed_data'] = final_df
+            pb.progress(1.0, text="✅ Processing Complete")
+
+            if new_recs or not master_df.empty:
+                final_df = pd.concat([master_df, pd.DataFrame(new_recs)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_recs)
+                st.session_state['processed_data'] = final_df
+                
+                styled_view = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
+                
+                st.dataframe(
+                    styled_view,
+                    use_container_width=True,
+                    column_config={
+                        "Lab Reference": st.column_config.Column(pinned=True)
+                    }
+                )
+                
+                buf = io.BytesIO()
+                astag_colors = {
+                    "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
+                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
+                    "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
+                }
+                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                    final_df.to_excel(writer, index=False, sheet_name="AMR")
+                    ws = writer.sheets["AMR"]
+                    for col_num, col_name in enumerate(final_df.columns, 1):
+                        if col_name in astag_colors:
+                            ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
+                
+                st.download_button("⬇️ Download Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
-            # --- DISPLAY WITH PINNED COLUMN ---
-            st.dataframe(final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, '')), column_config={"Lab Reference": st.column_config.Column(pinned=True)})
-            
-            buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                final_df.to_excel(writer, index=False, sheet_name="AMR")
-            st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            if skipped: st.info("### 📋 Skipped Data Summary\n" + "\n".join([f"- {s}" for s in skipped]))
+            if skipped_summary:
+                st.info("### 📋 Skipped Data Summary\n" + "\n".join([f"- {s}" for s in skipped_summary]))
 
 with tab2:
     if 'processed_data' in st.session_state:
         df = st.session_state['processed_data']
-        st.header("📊 Surveillance Insights")
+        st.header("📊 Global Surveillance Analytics")
         
-        # Dashboard Panels
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Global Isolates", len(df))
         m2.metric("Unique Clinical Cases", df["Lab Reference"].nunique())
-        
         df["Isolate"] = df["Isolate"].astype(str).str.strip()
         clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "")]
         m3.metric("Bacterial Diversity", clean_species["Isolate"].nunique())
@@ -181,13 +206,12 @@ with tab2:
         
         with col_c1:
             st.subheader("Global Bacterial Distribution")
-            # FIX: Global count derived from spreadsheet row occurrences
+            # This counts every occurrence of the species name across the final produced spreadsheet
             species_counts = clean_species["Isolate"].value_counts().reset_index()
-            species_counts.columns = ["Bacterial Species", "Global Count"]
-            
-            fig_species = px.bar(species_counts, x="Bacterial Species", y="Global Count", text="Global Count", template="plotly_white")
+            species_counts.columns = ["Bacterial Species", "Occurrence Count"]
+            fig_species = px.bar(species_counts, x="Bacterial Species", y="Occurrence Count", text="Occurrence Count", template="plotly_white")
             fig_species.update_traces(marker_color='#002b5c')
-            fig_species.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species Identified", yaxis_title="Total Dataset Frequency")
+            fig_species.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species Identified", yaxis_title="Total Count in Dataset")
             st.plotly_chart(fig_species, use_container_width=True)
 
         with col_c2:
@@ -201,8 +225,26 @@ with tab2:
                 fig_sir.update_layout(xaxis_tickangle=-45)
                 st.plotly_chart(fig_sir, use_container_width=True)
         
-        st.subheader("Breed Prevalence in Dataset")
-        st.plotly_chart(px.pie(df, names='Breed', hole=0.4, template="plotly_white"), use_container_width=True)
-    else:
-        st.info("💡 Process data in the first tab to unlock analytics panels.")
+        st.divider()
+        st.subheader("Species-Specific Breed Prevalence")
+        pc1, pc2 = st.columns(2)
+        
+        # Canine Demographic Panel
+        canine_df = df[df["Species"].str.contains("Canine", case=False, na=False)]
+        with pc1:
+            if not canine_df.empty:
+                fig_canine = px.pie(canine_df, names='Breed', hole=0.4, title="🐶 Canine Breed Prevalence", template="plotly_white")
+                st.plotly_chart(fig_canine, use_container_width=True)
+            else:
+                st.info("No Canine data identified for breed charting.")
 
+        # Feline Demographic Panel
+        feline_df = df[df["Species"].str.contains("Feline", case=False, na=False)]
+        with pc2:
+            if not feline_df.empty:
+                fig_feline = px.pie(feline_df, names='Breed', hole=0.4, title="🐱 Feline Breed Prevalence", template="plotly_white", color_discrete_sequence=px.colors.qualitative.Pastel)
+                st.plotly_chart(fig_feline, use_container_width=True)
+            else:
+                st.info("No Feline data identified for breed charting.")
+    else:
+        st.info("💡 Process data to unlock global analytics panels.")
