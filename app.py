@@ -5,6 +5,7 @@ import pandas as pd
 import re
 import io
 import plotly.express as px
+from openpyxl.styles import PatternFill, Font
 
 # --- 1. SET PAGE CONFIG (MUST BE FIRST) ---
 st.set_page_config(
@@ -78,7 +79,6 @@ def clean_boilerplate(text):
         if not line_clean:
             continue
             
-        # Erase headers, footers, phone numbers, and dates to fuse clinical data across pages
         if any(j.lower() in line_clean.lower() for j in junk_strings): continue
         if re.search(r'Page:\s*\d+\s*of\s*\d+', line_clean, re.IGNORECASE): continue
         if re.search(r'[TF][: \s]*02\s*9351\s*74(?:56|21)', line_clean, re.IGNORECASE): continue
@@ -118,7 +118,7 @@ def parse_pdf_report(file_object):
         # 2. Line-by-Line Boilerplate Scrubber
         clean_text = clean_boilerplate(raw_text)
         
-        # 3. Multi-Sample Splitting Logic (Run on CLEAN text to avoid NLP redaction destruction)
+        # 3. Multi-Sample Splitting Logic 
         sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', clean_text, flags=re.IGNORECASE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
@@ -132,7 +132,6 @@ def parse_pdf_report(file_object):
         ]
 
         for block in blocks_to_process:
-            # Check for explicitly negative cultures in this block
             if re.search(r'No\s+(?:significant\s+)?growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE):
                 continue
 
@@ -153,46 +152,36 @@ def parse_pdf_report(file_object):
                     sample_type_val = site_fallback.group(1).strip().capitalize()
                     sample_site_val = site_fallback.group(2).strip()
 
-            # Apply Privacy Filter ONLY to the sample site (where owner names might hide)
             sample_site_val = redact_text(sample_site_val)
 
             # --- 4. THE MASTER ISOLATE FINDER ---
             isolate_names = []
             
-            # Rule A: Is it immediately before the word SUSCEPTIBILITY?
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block):
                 isolate_names.append(m.group(1))
                 
-            # Rule B: Is it immediately after MALDI-TOF Identification?
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:[1-9]\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
                 isolate_names.append(m.group(1))
 
-            # Rule C: Is it in a numbered list? (1. Pseudomonas)
             for m in re.finditer(r'\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
                 isolate_names.append(m.group(1))
                 
-            # Rule D: Standard "Heavy growth - Species" format
             for m in re.finditer(r'\b(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
                 isolate_names.append(m.group(1))
                 
-            # Rule E: The Brute-Force Fallback Dictionary
             if not isolate_names:
                 for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
                     isolate_names.append(m.group(0))
 
-            # Deduplicate the found isolates while ignoring grammatical artifacts
             unique_isolates = []
             for name in isolate_names:
                 name = name.strip()
                 if name not in unique_isolates and "Gram" not in name and "Identification" not in name and "growth" not in name.lower():
                     unique_isolates.append(name)
                     
-            # Sort isolates by their first appearance in the document to maintain extraction order
             unique_isolates.sort(key=lambda x: block.find(x))
-
             purity_val = "Mixed" if len(unique_isolates) > 1 else "Pure" if len(unique_isolates) == 1 else "NA"
             
-            # Extract the text boundary for each specific isolate to find its S/I/R table
             for i, isolate_species in enumerate(unique_isolates):
                 start_idx = block.find(isolate_species)
                 if i + 1 < len(unique_isolates):
@@ -210,18 +199,14 @@ def parse_pdf_report(file_object):
                 
                 has_susceptibility = False
                 
-                # --- 5. ADAPTIVE S/I/R MAPPING ---
                 for abx in antibiotics_to_check:
-                    # Handles hyphens, spaces, and slashes dynamically
                     abx_parts = re.split(r'[\s/\-]+', abx)
                     abx_pattern = r'[\s/\-]+'.join([re.escape(p) for p in abx_parts])
                     
-                    # Handles British spelling variants in veterinary reports
                     abx_pattern = abx_pattern.replace("Amoxicillin", "Amox[iy]cillin")
                     abx_pattern = abx_pattern.replace("Cefalexin", "(?:Cefalexin|Cephalexin)")
                     abx_pattern = abx_pattern.replace("Cefazolin", "(?:Cefazolin|Cephazolin)")
                     
-                    # [^a-zA-Z]+ prevents "jumping" to the next antibiotic's results
                     match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b[*\^]*', isolate_text, re.IGNORECASE)
                     
                     if match:
@@ -311,11 +296,48 @@ with tab1:
                 if new_records:
                     st.success(f"Successfully processed {len(new_records)} valid isolates.")
                 
-                st.dataframe(final_df.style.applymap(color_sri), use_container_width=True)
+                styled_df = final_df.style.applymap(color_sri)
+                st.dataframe(styled_df, use_container_width=True)
                 
+                # --- EXCEL EXPORT WITH ASTAG IMPORTANCE HEADER COLORS ---
                 buf = io.BytesIO()
-                final_df.to_excel(buf, index=False)
-                st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.ms-excel")
+                
+                # Standard Veterinary ASTAG Importance Ratings Map
+                astag_header_colors = {
+                    # Low Importance (Green)
+                    "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE",
+                    "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE",
+                    "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE",
+                    "Nitrofurantoin": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
+                    # Medium Importance (Yellow)
+                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C",
+                    "Gentamicin": "FFFFEB9C", "Gentamicin (High Level)": "FFFFEB9C", 
+                    "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
+                    # High Importance (Red)
+                    "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE",
+                    "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE",
+                    "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", 
+                    "Oxacillin": "FFFFC7CE"
+                }
+
+                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                    styled_df.to_excel(writer, index=False, sheet_name="AMR Surveillance")
+                    worksheet = writer.sheets["AMR Surveillance"]
+                    
+                    # Apply colors to the header row directly in the Excel file
+                    for col_num, col_name in enumerate(final_df.columns, 1):
+                        if col_name in astag_header_colors:
+                            fill_color = astag_header_colors[col_name]
+                            cell = worksheet.cell(row=1, column=col_num)
+                            cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+                            cell.font = Font(bold=True)
+                
+                st.download_button(
+                    label="⬇️ Download Master Excel", 
+                    data=buf.getvalue(), 
+                    file_name="AMR_Surveillance.xlsx", 
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
             
             # --- END OF RUN REPORT ---
             st.divider()
