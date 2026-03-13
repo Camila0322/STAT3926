@@ -36,6 +36,7 @@ nlp = load_nlp()
 # --- 4. CORE PROCESSING FUNCTIONS ---
 def redact_text(text):
     """Redacts sensitive human/location names for privacy compliance."""
+    if not isinstance(text, str): return "NA"
     doc = nlp(text)
     for ent in doc.ents:
         if ent.label_ in ["PERSON", "GPE", "LOC"]: 
@@ -77,51 +78,49 @@ def clean_boilerplate(text):
         if not line_clean:
             continue
             
-        # Erase headers, footers, phone numbers, and page numbers
+        # Erase headers, footers, phone numbers, and dates to fuse clinical data across pages
         if any(j.lower() in line_clean.lower() for j in junk_strings): continue
         if re.search(r'Page:\s*\d+\s*of\s*\d+', line_clean, re.IGNORECASE): continue
         if re.search(r'[TF][: \s]*02\s*9351\s*74(?:56|21)', line_clean, re.IGNORECASE): continue
         if re.search(r'(?:Report|Arrival|Collected)\s*date:', line_clean, re.IGNORECASE): continue
+        if re.search(r'Our Ref:|Your Ref:', line_clean, re.IGNORECASE): continue
             
         scrubbed_lines.append(line_clean)
         
     return "\n".join(scrubbed_lines)
 
 def parse_pdf_report(file_object):
-    """Extracts metadata and susceptibility from PDF using the Anchored Block Method."""
+    """Extracts metadata and susceptibility from PDF robustly, handling multiple samples per file."""
     extracted_data = []
     skipped_isolates = []
     
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # 1. Line-by-Line Boilerplate Scrubber
-        clean_text = clean_boilerplate(raw_text)
-
-        # 2. Metadata Extraction
-        lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', clean_text)
+        # 1. Metadata Extraction (From raw text before anything is deleted)
+        lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
         
-        species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', clean_text, re.IGNORECASE)
+        species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|\d+\s*Months?|\d+\s*Weeks?|Our Ref|Your Ref|$))', raw_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
         
-        age_raw = re.search(r'(\d+\s*(?:Years?|Months?|Weeks?))', clean_text, re.IGNORECASE)
+        age_raw = re.search(r'(\d+\s*(?:Years?|Months?|Weeks?))', raw_text, re.IGNORECASE)
         age_val = standardize_age(age_raw.group(1)) if age_raw else "NA"
         
-        gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', clean_text, re.IGNORECASE)
+        gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', raw_text, re.IGNORECASE)
         sex_val, neutered_val = "NA", "NA"
         if gender_raw:
             g_str = gender_raw.group(1).title()
             sex_val = "Male" if "Male" in g_str else "Female"
             neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
+            
+        # 2. Line-by-Line Boilerplate Scrubber
+        clean_text = clean_boilerplate(raw_text)
         
-        # Privacy Redaction 
-        safe_text = redact_text(clean_text)
-        
-        # 3. Multi-Sample Splitting Logic
-        sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', safe_text, flags=re.IGNORECASE)
-        blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [safe_text]
+        # 3. Multi-Sample Splitting Logic (Run on CLEAN text to avoid NLP redaction destruction)
+        sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', clean_text, flags=re.IGNORECASE)
+        blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
         antibiotics_to_check = [
             "Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid", "Ampicillin", 
@@ -133,7 +132,7 @@ def parse_pdf_report(file_object):
         ]
 
         for block in blocks_to_process:
-            # Check for explicitly negative cultures in this block (Timber Rex)
+            # Check for explicitly negative cultures in this block
             if re.search(r'No\s+(?:significant\s+)?growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE):
                 continue
 
@@ -154,20 +153,32 @@ def parse_pdf_report(file_object):
                     sample_type_val = site_fallback.group(1).strip().capitalize()
                     sample_site_val = site_fallback.group(2).strip()
 
-            # --- 4. THE ANCHORED ISOLATE FINDER ---
+            # Apply Privacy Filter ONLY to the sample site (where owner names might hide)
+            sample_site_val = redact_text(sample_site_val)
+
+            # --- 4. THE MASTER ISOLATE FINDER ---
             isolate_names = []
             
-            # Rule A: Is it immediately before the word SUSCEPTIBILITY? (Crucial for page breaks)
+            # Rule A: Is it immediately before the word SUSCEPTIBILITY?
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block):
                 isolate_names.append(m.group(1))
                 
             # Rule B: Is it immediately after MALDI-TOF Identification?
-            for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:[1-9]\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*-\s*)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
+            for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:[1-9]\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
                 isolate_names.append(m.group(1))
 
             # Rule C: Is it in a numbered list? (1. Pseudomonas)
-            for m in re.finditer(r'\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*-\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
+            for m in re.finditer(r'\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
                 isolate_names.append(m.group(1))
+                
+            # Rule D: Standard "Heavy growth - Species" format
+            for m in re.finditer(r'\b(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
+                isolate_names.append(m.group(1))
+                
+            # Rule E: The Brute-Force Fallback Dictionary (Catches McGee's Enterococcus)
+            if not isolate_names:
+                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
+                    isolate_names.append(m.group(0))
 
             # Deduplicate the found isolates while ignoring grammatical artifacts
             unique_isolates = []
@@ -176,7 +187,7 @@ def parse_pdf_report(file_object):
                 if name not in unique_isolates and "Gram" not in name and "Identification" not in name and "growth" not in name.lower():
                     unique_isolates.append(name)
                     
-            # Sort isolates by their first appearance in the document to maintain order
+            # Sort isolates by their first appearance in the document to maintain extraction order
             unique_isolates.sort(key=lambda x: block.find(x))
 
             purity_val = "Mixed" if len(unique_isolates) > 1 else "Pure" if len(unique_isolates) == 1 else "NA"
@@ -272,7 +283,7 @@ with tab1:
                                 processed_refs.add(lab_ref)
                             
                             if skipped_iso:
-                                no_data_files.append(f"- **{f.name}** (Skipped anaerobes/isolates lacking S/I/R: {', '.join(skipped_iso)})")
+                                no_data_files.append(f"- **{f.name}** (Skipped isolates lacking S/I/R: {', '.join(skipped_iso)})")
                                 
                             if not recs and not skipped_iso:
                                 no_data_files.append(f"- **{f.name}** (No bacterial growth / Negative culture)")
