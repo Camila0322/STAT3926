@@ -96,6 +96,8 @@ def parse_pdf_report(file_object):
             neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
         
         clean_text = clean_boilerplate(raw_text)
+        
+        # FENCING: Splitting the document precisely at "SAMPLE X"
         sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', clean_text, flags=re.IGNORECASE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
@@ -109,8 +111,6 @@ def parse_pdf_report(file_object):
         ]
 
         for block in blocks_to_process:
-            # FIX: Removed the "No bacteria" abort switch. The code now safely scans past negative anaerobic notes.
-            
             sample_line = block.strip().split('\n')[0].strip()
             sample_type_val, sample_site_val = (sample_line.split(':', 1) + ["NA"])[:2] if ':' in sample_line else (sample_line, "NA")
             
@@ -149,10 +149,8 @@ def parse_pdf_report(file_object):
                 record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val.strip(), "Purity": purity_val, "Isolate": isolate_species}
                 has_sir = False
                 for abx in antibiotics_to_check:
-                    # FIX: Correctly escaped split variables to prevent the Python regex crash
                     abx_parts = re.split(r'[\s/\-]+', abx)
                     abx_pattern = r'[\s/\-]+'.join([re.escape(p) for p in abx_parts])
-                    
                     abx_pattern = abx_pattern.replace("Amoxicillin", "Amox[iy]cillin").replace("Cefalexin", "(?:Cefalexin|Cephalexin)").replace("Cefazolin", "(?:Cefazolin|Cephazolin)")
                     
                     match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b[*\^]*', isolate_text, re.IGNORECASE)
@@ -285,4 +283,3 @@ with tab2:
         st.plotly_chart(px.pie(df, names='Breed', hole=0.4, template="plotly_white"), use_container_width=True)
     else:
         st.info("💡 Process data in the first tab to unlock analytics.")
-
