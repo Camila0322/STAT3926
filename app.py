@@ -55,18 +55,20 @@ def standardize_age(age_string):
     return f"{years}Y {months}M"
 
 def clean_boilerplate(text):
-    """Line-by-line scrubber to stitch clinical data across page breaks."""
+    """Stitches clinical data across page breaks by removing redundant headers/footers."""
     lines = text.split('\n')
     scrubbed_lines = []
+    # Targeted strings from the provided PDF sources [cite: 1, 34, 73, 114, 151, 184, 223, 289, 323, 348, 383, 411]
     junk_strings = [
         "SYDNEY SCHOOL", "FACULTY OF VET", "PATHOLOGY DIAGNOSTIC", 
         "UNIVERSITY OF SYDNEY", "CRICOS", "ABN 15", "FINAL REPORT", 
-        "MICROBIOLOGY REPORT"
+        "MICROBIOLOGY REPORT", "Evelyn Williams Building", "McMaster Building"
     ]
     for line in lines:
         line_clean = line.strip()
         if not line_clean: continue
         if any(j.lower() in line_clean.lower() for j in junk_strings): continue
+        # Matches patterns like "Page: 1 of 5" or phone numbers [cite: 31, 37, 59]
         if re.search(r'Page:\s*\d+|T[: \s]*02\s*9351|date:|Ref:', line_clean, re.IGNORECASE): continue
         scrubbed_lines.append(line_clean)
     return "\n".join(scrubbed_lines)
@@ -78,9 +80,11 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
+        # Metadata Extraction [cite: 30, 57, 130, 204, 297, 357]
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
         
+        # Species/Breed [cite: 11, 192, 293, 352]
         species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|Our Ref|$))', raw_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
@@ -97,6 +101,7 @@ def parse_pdf_report(file_object):
             sex_val, neutered_val = "NA", "NA"
 
         clean_text = clean_boilerplate(raw_text)
+        # Split by SAMPLE markers, ensuring it's the full line [cite: 14, 95, 195, 213, 301, 360]
         sample_blocks = re.split(r'^SAMPLE(?:\s+\d+)?\s*$', clean_text, flags=re.IGNORECASE | re.MULTILINE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
@@ -110,7 +115,11 @@ def parse_pdf_report(file_object):
         ]
 
         for block in blocks_to_process:
+            # Check for negative growth explicitly [cite: 200, 212, 219, 250, 424]
+            if re.search(r'No\s+significant\s+growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE): continue
+            
             sample_line = block.strip().split('\n')[0].strip()
+            # Handle Swab: Right ear mass format [cite: 15, 96, 302, 361]
             sample_type_val, sample_site_val = (sample_line.split(':', 1) + ["NA"])[:2] if ':' in sample_line else (sample_line, "NA")
             
             if sample_site_val == "NA":
@@ -120,6 +129,7 @@ def parse_pdf_report(file_object):
 
             sample_site_val = redact_text(sample_site_val)
 
+            # Isolate Detection anchors [cite: 24, 33, 63, 93, 104, 133, 139, 245, 309, 370, 400, 403]
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block):
                 isolate_names.append(m.group(1))
@@ -129,7 +139,7 @@ def parse_pdf_report(file_object):
                 isolate_names.append(m.group(1))
             
             if not isolate_names:
-                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
+                for m in re.finditer(r'\b(Staphylococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
                     isolate_names.append(m.group(0))
 
             unique_isolates = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
@@ -149,6 +159,7 @@ def parse_pdf_report(file_object):
                 
                 has_sir = False
                 for abx in antibiotics_to_check:
+                    # Adaptive regex for spelling variants [cite: 26, 61, 65, 106, 135, 247, 311, 373, 402, 405]
                     abx_esc = re.escape(abx).replace(r'Amoxicillin', r'Amox[iy]cillin').replace(r'Cefalexin', r'(?:Cefalexin|Cephalexin)')
                     match = re.search(rf'{abx_esc}(?:[^a-zA-Z]+)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b', isolate_text, re.IGNORECASE)
                     if match:
@@ -188,21 +199,27 @@ with tab1:
                 final_df = pd.DataFrame(new_recs)
                 st.session_state['processed_data'] = final_df
                 
-                styled_view = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
+                # --- FIX: PROPER PINNING LOGIC ---
+                styled_view = final_df.style.applymap(lambda v: {
+                    'S': 'background-color: #C6EFCE; color: #006100', 
+                    'I': 'background-color: #FFEB9C; color: #9C5700', 
+                    'R': 'background-color: #FFC7CE; color: #9C0006'
+                }.get(v, ''))
                 
                 st.dataframe(
                     styled_view,
                     use_container_width=True,
                     column_config={
-                        "Lab Reference": st.column_config.TextColumn(pinned=True)
+                        "Lab Reference": st.column_config.Column(pinned=True)
                     }
                 )
                 
                 buf = io.BytesIO()
+                # ASTAG color coding logic
                 astag_colors = {
-                    "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
-                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
-                    "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
+                    "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", 
+                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C",
+                    "Enrofloxacin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE", "Imipenem": "FFFFC7CE"
                 }
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                     styled_view.to_excel(writer, index=False, sheet_name="AMR")
@@ -210,7 +227,6 @@ with tab1:
                     for col_num, col_name in enumerate(final_df.columns, 1):
                         if col_name in astag_colors:
                             ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
-                            ws.cell(1, col_num).font = Font(bold=True)
                 
                 st.download_button("⬇️ Download Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
