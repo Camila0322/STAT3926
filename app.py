@@ -118,7 +118,7 @@ def parse_pdf_report(file_object):
         # 2. Line-by-Line Boilerplate Scrubber
         clean_text = clean_boilerplate(raw_text)
         
-        # 3. Multi-Sample Splitting Logic 
+        # 3. Multi-Sample Splitting Logic
         sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', clean_text, flags=re.IGNORECASE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
@@ -199,6 +199,7 @@ def parse_pdf_report(file_object):
                 
                 has_susceptibility = False
                 
+                # --- 5. ADAPTIVE S/I/R MAPPING ---
                 for abx in antibiotics_to_check:
                     abx_parts = re.split(r'[\s/\-]+', abx)
                     abx_pattern = r'[\s/\-]+'.join([re.escape(p) for p in abx_parts])
@@ -308,7 +309,7 @@ with tab1:
                     "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE",
                     "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE",
                     "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE",
-                    "Nitrofurantoin": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
+                    "Chloramphenicol": "FFC6EFCE",
                     # Medium Importance (Yellow)
                     "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C",
                     "Gentamicin": "FFFFEB9C", "Gentamicin (High Level)": "FFFFEB9C", 
@@ -317,7 +318,7 @@ with tab1:
                     "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE",
                     "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE",
                     "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", 
-                    "Oxacillin": "FFFFC7CE"
+                    "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"  # Fixed: Moved to RED
                 }
 
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
