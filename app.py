@@ -80,11 +80,8 @@ def clean_isolate_name(name):
     """Deep scrubber to strip legacy prefix numbers and growth strings from existing Excel data."""
     if pd.isna(name): return "NA"
     name = str(name).strip()
-    # Target "1. ", "2. ", etc.
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
-    # Target "Moderate growth - ", "Heavy growth of "
     name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
-    # Run number strip again just in case the legacy data was "1. Heavy growth - 2. E. coli"
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
     return name.strip()
@@ -135,8 +132,6 @@ def parse_pdf_report(file_object):
 
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
-            
-            # Robust extraction skipping numbered lists and growth descriptions
             for m in re.finditer(r'\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             for m in re.finditer(r'\b(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             
@@ -154,9 +149,7 @@ def parse_pdf_report(file_object):
             purity_val = "Mixed" if len(unique_isolates) > 1 else "Pure" if len(unique_isolates) == 1 else "NA"
             
             for i, isolate_species in enumerate(unique_isolates):
-                # Apply deep scrubber to the new extractions as well
                 iso_clean = clean_isolate_name(isolate_species)
-                
                 start_idx = block.find(isolate_species)
                 end_idx = block.find(unique_isolates[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_isolates) else len(block)
                 isolate_text = block[start_idx:end_idx]
@@ -219,7 +212,17 @@ with tab1:
             progress_bar.progress(1.0, text="✅ All files processed successfully!")
 
             if new_records or not master_df.empty:
+                # Merge new PDFs with the Excel data
                 final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
+                
+                # CRITICAL FIX: The "Source of Truth" Filter
+                # Clean up any legacy names in the Excel file and instantly drop any exact duplicates 
+                # so that Pluralibacter isn't counted 6 times for the same animal!
+                if "Isolate" in final_df.columns:
+                    final_df["Isolate"] = final_df["Isolate"].apply(clean_isolate_name)
+                final_df = final_df.drop_duplicates(subset=['Lab Reference', 'Sample Type', 'Site', 'Isolate'], keep='last')
+                
+                # Save this perfectly clean table to session state so Tab 2 uses it exactly
                 st.session_state['processed_data'] = final_df
                 
                 styled_df = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
@@ -252,10 +255,8 @@ with tab1:
 
 with tab2:
     if 'processed_data' in st.session_state:
+        # Pulling directly from the scrubbed table displayed in Tab 1
         df = st.session_state['processed_data'].copy()
-        
-        # CRITICAL FIX: Aggressively scrub the legacy Excel data before grouping
-        df["Isolate"] = df["Isolate"].apply(clean_isolate_name)
         
         st.header("📊 Surveillance Insights")
         m1, m2, m3 = st.columns(3)
