@@ -222,26 +222,34 @@ with tab2:
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
-        # CREATE VERIFICATION DATAFRAME FIRST
+        # FORCE STRICT TYPES FOR PLOTLY
         counts = clean_species["Isolate"].value_counts()
         verification_df = pd.DataFrame({
             "Bacterial Species": counts.index.astype(str),
-            "Frequency": counts.values
+            "Count": counts.values.astype(int) # Forces the numbers to be integers, not index labels
         })
         
         with col_chart:
-            # NATIVE STREAMLIT CHART: Immune to Plotly's indexing bugs. 
-            # It physically cannot misinterpret the counts.
-            st.bar_chart(
-                data=verification_df,
-                x="Bacterial Species",
-                y="Frequency",
-                color="#002b5c",
-                use_container_width=True
+            # RESTORED PLOTLY FIX
+            fig_species = px.bar(
+                verification_df, 
+                x="Bacterial Species", 
+                y="Count", 
+                text="Count", 
+                template="plotly_white"
             )
+            fig_species.update_traces(textposition='outside', marker_color='#002b5c')
+            
+            # Lock the Y-axis to mathematical scaling so Plotly cannot index it alphabetically
+            fig_species.update_layout(
+                yaxis=dict(type='linear'),
+                xaxis=dict(categoryorder='total descending'),
+                xaxis_title="Species Identified", 
+                yaxis_title="Total Rows in Dataset"
+            )
+            st.plotly_chart(fig_species, use_container_width=True)
             
         with col_data:
-            # DISPLAY THE EXACT SAME DATAFRAME
             st.markdown("**Data Verification Table**")
             st.markdown("*This confirms the graph matches Tab 1 exactly.*")
             st.dataframe(verification_df, use_container_width=True, hide_index=True)
