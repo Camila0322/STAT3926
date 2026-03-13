@@ -175,7 +175,7 @@ def parse_pdf_report(file_object):
             for m in re.finditer(r'\b(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
                 isolate_names.append(m.group(1))
                 
-            # Rule E: The Brute-Force Fallback Dictionary (Catches McGee's Enterococcus)
+            # Rule E: The Brute-Force Fallback Dictionary
             if not isolate_names:
                 for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
                     isolate_names.append(m.group(0))
@@ -210,11 +210,19 @@ def parse_pdf_report(file_object):
                 
                 has_susceptibility = False
                 
+                # --- 5. ADAPTIVE S/I/R MAPPING ---
                 for abx in antibiotics_to_check:
-                    abx_parts = re.split(r'[\s/]+', abx)
-                    abx_pattern = r'[\s/]*'.join([re.escape(p) for p in abx_parts])
+                    # Handles hyphens, spaces, and slashes dynamically
+                    abx_parts = re.split(r'[\s/\-]+', abx)
+                    abx_pattern = r'[\s/\-]+'.join([re.escape(p) for p in abx_parts])
                     
-                    match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\*?\b', isolate_text, re.IGNORECASE)
+                    # Handles British spelling variants in veterinary reports
+                    abx_pattern = abx_pattern.replace("Amoxicillin", "Amox[iy]cillin")
+                    abx_pattern = abx_pattern.replace("Cefalexin", "(?:Cefalexin|Cephalexin)")
+                    abx_pattern = abx_pattern.replace("Cefazolin", "(?:Cefazolin|Cephazolin)")
+                    
+                    # [^a-zA-Z]+ prevents "jumping" to the next antibiotic's results
+                    match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b[*\^]*', isolate_text, re.IGNORECASE)
                     
                     if match:
                         val = match.group(1).upper()[0]
