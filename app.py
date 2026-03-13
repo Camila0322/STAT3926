@@ -52,10 +52,6 @@ def standardize_age(age_string):
     if year_match: years = int(year_match.group(1))
     month_match = re.search(r'(\d+)\s*(m|month|months)', age_string, re.IGNORECASE)
     if month_match: months = int(month_match.group(1))
-    if years == 0 and months == 0:
-        week_match = re.search(r'(\d+)\s*(w|week|weeks)', age_string, re.IGNORECASE)
-        if week_match: months = int(week_match.group(1)) // 4
-        else: return age_string 
     return f"{years}Y {months}M"
 
 def clean_boilerplate(text):
@@ -63,38 +59,43 @@ def clean_boilerplate(text):
     lines = text.split('\n')
     scrubbed_lines = []
     junk_strings = [
-        "SYDNEY SCHOOL OF VETERINARY SCIENCE", "FACULTY OF VETERINARY SCIENCE",
-        "VETERINARY PATHOLOGY DIAGNOSTIC SERVICES", "THE UNIVERSITY OF", "SYDNEY",
-        "University of Sydney", "NSW 2006 Australia", "NSW 2006 AUSTRALIA",
-        "CRICOS 00026A", "ABN 15 211 513 464", "W: www.sydney.edu.au", "FINAL REPORT"
+        "SYDNEY SCHOOL", "FACULTY OF VET", "PATHOLOGY DIAGNOSTIC", 
+        "UNIVERSITY OF SYDNEY", "CRICOS", "ABN 15", "FINAL REPORT", 
+        "MICROBIOLOGY REPORT"
     ]
     for line in lines:
         line_clean = line.strip()
         if not line_clean: continue
         if any(j.lower() in line_clean.lower() for j in junk_strings): continue
-        if re.search(r'Page:\s*\d+\s*of\s*\d+|T[: \s]*02\s*9351\s*74(?:56|21)|date:|Ref:', line_clean, re.IGNORECASE): continue
+        if re.search(r'Page:\s*\d+|T[: \s]*02\s*9351|date:|Ref:', line_clean, re.IGNORECASE): continue
         scrubbed_lines.append(line_clean)
     return "\n".join(scrubbed_lines)
 
 def parse_pdf_report(file_object):
+    """Extracts metadata and susceptibility from PDF robustly."""
     extracted_data = []
     skipped_isolates = []
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
+        
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
+        
         species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|Our Ref|$))', raw_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
+        
         age_raw = re.search(r'(\d+\s*(?:Years?|Months?|Weeks?))', raw_text, re.IGNORECASE)
         age_val = standardize_age(age_raw.group(1)) if age_raw else "NA"
+        
         gender_raw = re.search(r'(Male Neutered|Female Spayed|Male|Female)', raw_text, re.IGNORECASE)
-        sex_val, neutered_val = "NA", "NA"
         if gender_raw:
             g_str = gender_raw.group(1).title()
             sex_val = "Male" if "Male" in g_str else "Female"
             neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
-        
+        else:
+            sex_val, neutered_val = "NA", "NA"
+
         clean_text = clean_boilerplate(raw_text)
         sample_blocks = re.split(r'^SAMPLE(?:\s+\d+)?\s*$', clean_text, flags=re.IGNORECASE | re.MULTILINE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
@@ -115,121 +116,106 @@ def parse_pdf_report(file_object):
             if sample_site_val == "NA":
                 site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid|Implant):\s*(.+)', block, re.IGNORECASE)
                 if site_fallback:
-                    sample_type_val = site_fallback.group(1).strip().capitalize()
-                    sample_site_val = site_fallback.group(2).strip()
+                    sample_type_val, sample_site_val = site_fallback.groups()
 
             sample_site_val = redact_text(sample_site_val)
 
             isolate_names = []
-            for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
-            for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
-            for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
+            for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block):
+                isolate_names.append(m.group(1))
+            for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
+                isolate_names.append(m.group(1))
+            for m in re.finditer(r'\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Mixed)\s*growth\s*-\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE):
+                isolate_names.append(m.group(1))
             
             if not isolate_names:
-                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pluralibacter|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
+                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
                     isolate_names.append(m.group(0))
 
-            unique_isolates = []
-            for name in isolate_names:
-                name = name.strip()
-                if name not in unique_isolates and "Gram" not in name and "Identification" not in name and "growth" not in name.lower():
-                    unique_isolates.append(name)
-                    
-            unique_isolates.sort(key=lambda x: block.find(x))
+            unique_isolates = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
             purity_val = "Mixed" if len(unique_isolates) > 1 else "Pure" if len(unique_isolates) == 1 else "NA"
             
-            for i, isolate_species in enumerate(unique_isolates):
-                start_idx = block.find(isolate_species)
-                end_idx = block.find(unique_isolates[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_isolates) else len(block)
+            for i, iso in enumerate(unique_isolates):
+                start_idx = block.find(iso)
+                end_idx = block.find(unique_isolates[i+1], start_idx + len(iso)) if i + 1 < len(unique_isolates) else len(block)
                 isolate_text = block[start_idx:end_idx]
                 
-                record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val.strip(), "Purity": purity_val, "Isolate": isolate_species}
+                record = {
+                    "Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, 
+                    "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, 
+                    "Sample Type": sample_type_val.strip(), "Site": sample_site_val.strip(), 
+                    "Purity": purity_val, "Isolate": iso
+                }
+                
                 has_sir = False
                 for abx in antibiotics_to_check:
-                    abx_parts = re.split(r'[\s/\-]+', abx)
-                    abx_pattern = r'[\s/\-]+'.join([re.escape(p) for p in abx_parts])
-                    abx_pattern = abx_pattern.replace("Amoxicillin", "Amox[iy]cillin").replace("Cefalexin", "(?:Cefalexin|Cephalexin)").replace("Cefazolin", "(?:Cefazolin|Cephazolin)")
-                    
-                    match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b[*\^]*', isolate_text, re.IGNORECASE)
+                    abx_esc = re.escape(abx).replace(r'Amoxicillin', r'Amox[iy]cillin').replace(r'Cefalexin', r'(?:Cefalexin|Cephalexin)')
+                    match = re.search(rf'{abx_esc}(?:[^a-zA-Z]+)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b', isolate_text, re.IGNORECASE)
                     if match:
                         record[abx] = match.group(1).upper()[0]
                         has_sir = True
                     else: record[abx] = "NA"
                 
                 if has_sir: extracted_data.append(record)
-                else: skipped_isolates.append(f"{sample_type_val} - {isolate_species}")
+                else: skipped_isolates.append(f"{sample_type_val.strip()} - {iso}")
+                
     return extracted_data, skipped_isolates, lab_ref_val
 
-# --- 5. SIDEBAR DESIGN ---
-with st.sidebar:
-    st.markdown("<div style='text-align: center;'><div style='font-size: 50px;'>🏛️</div><h2 style='color: #002b5c;'>USYD Vet Path</h2></div>", unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown("### 🛠️ Extraction Workflow\n1. 📂 **Upload** Master Excel\n2. 📄 **Drop** PDF Reports\n3. ⚡ **Process** & Redact\n4. 📥 **Download** Final Sheet")
-    st.success("🔒 **Privacy Mode Active**")
-
-# --- 6. MAIN INTERFACE ---
+# --- 5. INTERFACE ---
 st.title("🔬 AMR National Surveillance Pipeline")
 tab1, tab2 = st.tabs(["🚀 Data Processing", "📊 Live Analytics"])
 
 with tab1:
     c1, c2 = st.columns(2)
-    with c1: master_file = st.file_uploader("1. Master Dataset (Excel)", type=["xlsx"])
-    with c2: pdf_files = st.file_uploader("2. PDF Reports", type=["pdf"], accept_multiple_files=True)
+    master_file = c1.file_uploader("1. Existing Master Dataset (Excel)", type=["xlsx"])
+    pdf_files = c2.file_uploader("2. New PDF Reports", type=["pdf"], accept_multiple_files=True)
 
-    if st.button("🚀 Process & Synchronize"):
+    if st.button("🚀 Process Reports"):
         if pdf_files:
-            processed_refs = set(pd.read_excel(master_file)["Lab Reference"].dropna().unique()) if master_file else set()
-            new_records, dupes, skipped_list, errors = [], [], [], []
-            
-            total_files = len(pdf_files)
-            progress_bar = st.progress(0, text="Initializing processing pipeline...")
+            new_recs, skipped_summary = [], []
+            total = len(pdf_files)
+            pb = st.progress(0)
             
             for i, f in enumerate(pdf_files):
-                progress_bar.progress((i)/total_files, text=f"Processing file {i+1} of {total_files}: {f.name}")
-                try:
-                    recs, skip_iso, ref = parse_pdf_report(f)
-                    if ref in processed_refs: dupes.append(f.name)
-                    else:
-                        if recs: new_records.extend(recs); processed_refs.add(ref)
-                        # GROUPED BULLET POINT LOGIC
-                        if skip_iso:
-                            skipped_list.append(f"**{f.name}** (Excluded: {', '.join(skip_iso)})")
-                        elif not recs:
-                            skipped_list.append(f"**{f.name}** (No bacterial growth identified)")
-                except Exception as e: errors.append(f"**{f.name}** ({str(e)})")
+                pb.progress((i)/total, text=f"Scanning: {f.name}")
+                recs, skip, ref = parse_pdf_report(f)
+                new_recs.extend(recs)
+                if skip: skipped_summary.append(f"**{f.name}** (Excluded: {', '.join(skip)})")
+            
+            pb.progress(1.0, text="✅ Processing Complete")
 
-            progress_bar.progress(1.0, text="✅ All files processed successfully!")
-
-            if new_records or master_file:
-                final_df = pd.concat([pd.read_excel(master_file), pd.DataFrame(new_records)], ignore_index=True) if master_file else pd.DataFrame(new_records)
+            if new_recs:
+                final_df = pd.DataFrame(new_recs)
                 st.session_state['processed_data'] = final_df
-                styled_df = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
-                st.dataframe(styled_df, use_container_width=True)
+                
+                styled_view = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
+                
+                st.dataframe(
+                    styled_view,
+                    use_container_width=True,
+                    column_config={
+                        "Lab Reference": st.column_config.TextColumn(pinned=True)
+                    }
+                )
                 
                 buf = io.BytesIO()
                 astag_colors = {
                     "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
                     "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
                     "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
-                } 
+                }
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                    styled_df.to_excel(writer, index=False, sheet_name="AMR Surveillance")
-                    ws = writer.sheets["AMR Surveillance"]
+                    styled_view.to_excel(writer, index=False, sheet_name="AMR")
+                    ws = writer.sheets["AMR"]
                     for col_num, col_name in enumerate(final_df.columns, 1):
                         if col_name in astag_colors:
                             ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
-                st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                            ws.cell(1, col_num).font = Font(bold=True)
+                
+                st.download_button("⬇️ Download Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
-            st.divider()
-            if dupes: st.warning(f"**Skipped Duplicates:** {', '.join(dupes)}")
-            if skipped_list: 
-                st.info("### 📋 Skipped Data Summary")
-                for item in skipped_list:
-                    st.write(f"- {item}")
-            if errors: 
-                st.error("### ⚠️ Analysis Errors")
-                for err in errors:
-                    st.write(f"- {err}")
+            if skipped_summary:
+                st.info("### 📋 Skipped Data Summary\n" + "\n".join([f"- {s}" for s in skipped_summary]))
 
 with tab2:
     if 'processed_data' in st.session_state:
@@ -239,17 +225,16 @@ with tab2:
         m1.metric("Total Isolates", len(df))
         m2.metric("Unique Cases", df["Lab Reference"].nunique())
         df["Isolate"] = df["Isolate"].astype(str).str.strip()
-        clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "") & (df["Isolate"] != "None")]
+        clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "")]
         m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
-        st.divider()
+        
         col_c1, col_c2 = st.columns(2)
         with col_c1:
             st.subheader("Bacterial Species Distribution")
             species_counts = clean_species["Isolate"].value_counts().reset_index()
             species_counts.columns = ["Bacterial Species", "Isolate Count"]
             fig_species = px.bar(species_counts, x="Bacterial Species", y="Isolate Count", text="Isolate Count", template="plotly_white")
-            fig_species.update_traces(textposition='outside', marker_color='#002b5c')
-            fig_species.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species", yaxis_title="Count", margin=dict(t=20, b=20))
+            fig_species.update_traces(marker_color='#002b5c')
             st.plotly_chart(fig_species, use_container_width=True)
         with col_c2:
             st.subheader("Susceptibility Profiles")
@@ -259,9 +244,4 @@ with tab2:
                 sir_melt = df[actual_abx_cols].melt(var_name="Antibiotic", value_name="Result")
                 sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
                 fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group", color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
-                fig_sir.update_layout(xaxis_tickangle=-45, margin=dict(t=20, b=20))
                 st.plotly_chart(fig_sir, use_container_width=True)
-        st.subheader("Breed Prevalence")
-        st.plotly_chart(px.pie(df, names='Breed', hole=0.4, template="plotly_white"), use_container_width=True)
-    else:
-        st.info("💡 Process data in the first tab to unlock analytics.")
