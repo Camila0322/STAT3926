@@ -126,7 +126,7 @@ def parse_pdf_report(file_object):
             for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             
             if not isolate_names:
-                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pluralibacter|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
+                for m in re.finditer(r'\b(Staphylococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pluralibacter|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
                     isolate_names.append(m.group(0))
 
             unique_isolates = []
@@ -178,9 +178,10 @@ with tab1:
 
     if st.button("🚀 Process & Synchronize"):
         if pdf_files:
-            processed_refs = set(pd.read_excel(master_file)["Lab Reference"].dropna().unique()) if master_file else set()
-            new_records, dupes, skipped_list, errors = [], [], [], []
+            master_df = pd.read_excel(master_file) if master_file else pd.DataFrame()
+            processed_refs = set(master_df["Lab Reference"].dropna().unique()) if not master_df.empty else set()
             
+            new_records, dupes, skipped_list, errors = [], [], [], []
             total_files = len(pdf_files)
             progress_bar = st.progress(0, text="Initializing processing pipeline...")
             
@@ -191,7 +192,6 @@ with tab1:
                     if ref in processed_refs: dupes.append(f.name)
                     else:
                         if recs: new_records.extend(recs); processed_refs.add(ref)
-                        # GROUPED BULLET POINT LOGIC
                         if skip_iso:
                             skipped_list.append(f"**{f.name}** (Excluded: {', '.join(skip_iso)})")
                         elif not recs:
@@ -200,59 +200,71 @@ with tab1:
 
             progress_bar.progress(1.0, text="✅ All files processed successfully!")
 
-            if new_records or master_file:
-                final_df = pd.concat([pd.read_excel(master_file), pd.DataFrame(new_records)], ignore_index=True) if master_file else pd.DataFrame(new_records)
-                st.session_state['processed_data'] = final_df
-                styled_df = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
-                st.dataframe(styled_df, use_container_width=True)
-                
-                buf = io.BytesIO()
-                astag_colors = {
-                    "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
-                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
-                    "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
-                } 
-                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                    styled_df.to_excel(writer, index=False, sheet_name="AMR Surveillance")
-                    ws = writer.sheets["AMR Surveillance"]
-                    for col_num, col_name in enumerate(final_df.columns, 1):
-                        if col_name in astag_colors:
-                            ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
-                st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            # GLOBAL COUNT FIX: We use final_df as the cumulative dataset for counting
+            final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
+            st.session_state['processed_data'] = final_df
+            
+            styled_df = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
+            st.dataframe(styled_df, use_container_width=True)
+            
+            buf = io.BytesIO()
+            astag_colors = {
+                "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
+                "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
+                "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
+            } 
+            with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                styled_df.to_excel(writer, index=False, sheet_name="AMR Surveillance")
+                ws = writer.sheets["AMR Surveillance"]
+                for col_num, col_name in enumerate(final_df.columns, 1):
+                    if col_name in astag_colors:
+                        ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
+            st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
             st.divider()
             if dupes: st.warning(f"**Skipped Duplicates:** {', '.join(dupes)}")
             if skipped_list: 
                 st.info("### 📋 Skipped Data Summary")
-                for item in skipped_list:
-                    st.write(f"- {item}")
+                for item in skipped_list: st.write(f"- {item}")
             if errors: 
                 st.error("### ⚠️ Analysis Errors")
-                for err in errors:
-                    st.write(f"- {err}")
+                for err in errors: st.write(f"- {err}")
 
 with tab2:
     if 'processed_data' in st.session_state:
+        # We perform counts on the entire synchronized master sheet stored in session_state
         df = st.session_state['processed_data']
-        st.header("📊 Surveillance Insights")
+        st.header("📊 Global Surveillance Analytics")
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Isolates", len(df))
-        m2.metric("Unique Cases", df["Lab Reference"].nunique())
+        m1.metric("Total Global Isolates", len(df))
+        m2.metric("Unique Clinical Cases", df["Lab Reference"].nunique())
+        
         df["Isolate"] = df["Isolate"].astype(str).str.strip()
         clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "") & (df["Isolate"] != "None")]
-        m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
+        m3.metric("Bacterial Species Diversity", clean_species["Isolate"].nunique())
+        
         st.divider()
         col_c1, col_c2 = st.columns(2)
+        
         with col_c1:
-            st.subheader("Bacterial Species Distribution")
+            st.subheader("Global Isolate Frequency")
+            # This counts every single occurrence of each species across the whole master sheet
             species_counts = clean_species["Isolate"].value_counts().reset_index()
-            species_counts.columns = ["Bacterial Species", "Isolate Count"]
-            fig_species = px.bar(species_counts, x="Bacterial Species", y="Isolate Count", text="Isolate Count", template="plotly_white")
+            species_counts.columns = ["Bacterial Species", "Global Count"]
+            
+            fig_species = px.bar(
+                species_counts, 
+                x="Bacterial Species", 
+                y="Global Count", 
+                text="Global Count", 
+                template="plotly_white"
+            )
             fig_species.update_traces(textposition='outside', marker_color='#002b5c')
-            fig_species.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species", yaxis_title="Count", margin=dict(t=20, b=20))
+            fig_species.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species", yaxis_title="Total Occurrences", margin=dict(t=20, b=20))
             st.plotly_chart(fig_species, use_container_width=True)
+
         with col_c2:
-            st.subheader("Susceptibility Profiles")
+            st.subheader("Global Resistance Profiles")
             sir_check = df.isin(['S', 'I', 'R']).any()
             actual_abx_cols = sir_check[sir_check == True].index.tolist()
             if actual_abx_cols:
@@ -261,7 +273,8 @@ with tab2:
                 fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group", color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
                 fig_sir.update_layout(xaxis_tickangle=-45, margin=dict(t=20, b=20))
                 st.plotly_chart(fig_sir, use_container_width=True)
-        st.subheader("Breed Prevalence")
+        
+        st.subheader("Breed Prevalence in Master Dataset")
         st.plotly_chart(px.pie(df, names='Breed', hole=0.4, template="plotly_white"), use_container_width=True)
     else:
         st.info("💡 Process data in the first tab to unlock analytics.")
