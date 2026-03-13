@@ -69,12 +69,15 @@ def clean_boilerplate(text):
     return "\n".join(scrubbed_lines)
 
 def clean_isolate_name(name):
+    """Deep scrubber to ensure Pandas groups strings perfectly."""
     if pd.isna(name): return "NA"
     name = str(name)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
+    
+    # Force pure capitalization to prevent invisible mismatch duplicates
     name = " ".join(name.split()).capitalize()
     return name if name else "NA"
 
@@ -176,13 +179,17 @@ with tab1:
             if new_records or not master_df.empty:
                 final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
                 
+                # --- EXTREME DEDUPLICATION & CLEANING ---
                 if "Isolate" in final_df.columns:
                     final_df["Isolate"] = final_df["Isolate"].apply(clean_isolate_name)
                 
                 final_df = final_df.drop_duplicates(subset=['Lab Reference', 'Sample Type', 'Site', 'Isolate'], keep='last')
+                
+                # The data saved to session state is EXACTLY what is displayed in Tab 1
                 st.session_state['processed_data'] = final_df
                 
-                styled_df = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
+                # FIX: Swapped applymap to map to clear Pandas 2.1.4 warnings from the terminal
+                styled_df = final_df.style.map(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
                 st.dataframe(styled_df, use_container_width=True)
                 
                 buf = io.BytesIO()
@@ -219,25 +226,31 @@ with tab2:
         
         st.divider()
         
+        # --- VERIFICATION LAYOUT ---
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
-        # 1. CREATE VERIFICATION DATAFRAME FIRST
-        verification_df = clean_species["Isolate"].value_counts().reset_index()
-        verification_df.columns = ["Isolate", "Count"]
+        # 1. CREATE VERIFICATION DATAFRAME FIRST (RENAMED COLUMN TO AVOID PLOTLY BUG)
+        counts = clean_species["Isolate"].value_counts()
+        verification_df = pd.DataFrame({
+            "Bacterial Species": counts.index.astype(str),
+            "Frequency": counts.values
+        })
         
         with col_chart:
             # 2. FEED VERIFICATION DATAFRAME DIRECTLY TO PLOTLY
             fig_species = px.bar(
                 verification_df, 
-                x="Isolate", 
-                y="Count", 
-                text="Count", 
+                x="Bacterial Species", 
+                y="Frequency", 
+                text="Frequency", 
                 template="plotly_white"
             )
             fig_species.update_traces(textposition='outside', marker_color='#002b5c')
+            
+            # Lock the X-axis explicitly to the array to prevent alphabetical sorting errors
             fig_species.update_layout(
-                xaxis=dict(categoryorder='total descending'), # Forces plotting exactly as calculated
+                xaxis=dict(categoryorder='array', categoryarray=verification_df['Bacterial Species']), 
                 xaxis_title="Species Identified", 
                 yaxis_title="Total Rows in Dataset"
             )
