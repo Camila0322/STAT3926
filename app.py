@@ -72,7 +72,6 @@ def clean_boilerplate(text):
         "Veterinary Pathology Diagnostic Services"
     ]
     for line in lines:
-        # Ignore lines containing known junk, page numbers, or phone numbers
         if any(j.lower() in line.lower() for j in junk_strings) \
            or re.search(r'Page:\s*\d+\s*of\s*\d+', line, re.IGNORECASE) \
            or re.search(r'T[:\s]*02\s*9351\s*7456', line, re.IGNORECASE):
@@ -88,10 +87,10 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # --- 1. PAGE BREAK SCRUBBER (SAFE LINE-BY-LINE METHOD) ---
+        # 1. Boilerplate Scrubber
         clean_text = clean_boilerplate(raw_text)
 
-        # Metadata Extraction
+        # 2. Metadata Extraction
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', clean_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
         
@@ -112,7 +111,7 @@ def parse_pdf_report(file_object):
         # Privacy Redaction 
         safe_text = redact_text(clean_text)
         
-        # --- 2. MULTI-SAMPLE SPLITTING LOGIC ---
+        # 3. Multi-Sample Splitting Logic
         sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', safe_text, flags=re.IGNORECASE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [safe_text]
 
@@ -126,7 +125,7 @@ def parse_pdf_report(file_object):
         ]
 
         for block in blocks_to_process:
-            # Check for "No growth" explicitly in this sample block
+            # Check for explicitly negative cultures in this block (Timber Rex fix)
             if re.search(r'No\s+(?:significant\s+)?growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE):
                 continue
 
@@ -147,13 +146,13 @@ def parse_pdf_report(file_object):
                     sample_type_val = site_fallback.group(1).strip().capitalize()
                     sample_site_val = site_fallback.group(2).strip()
 
-            # --- 3. MASTER ISOLATE REGEX ---
-            # Flawlessly matches "Heavy growth - E coli" OR "1. Heavy growth - E coli" OR "1. E coli" 
-            # while jumping safely over non-species headers.
-            prefix = r'(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:-\s*)?|\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:-\s*)?)?)'
-            isolate_pattern = rf'{prefix}([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
+            # --- 4. THE BRIDGING REGEX (Master Isolate Extractor) ---
+            # Finds "Heavy growth" OR "1.", bridges up to 150 chars, and captures the species.
+            prefix = r'(?:(?:[Hh]eavy|[Mm]oderate|[Ll]ight|[Ss]canty|[Pp]rofuse|[Aa]bundant|[Mm]ixed)\s*growth|\b[1-9]\s*\.)'
+            isolate_pattern = rf'{prefix}(?:.{{0,150}}?)\b([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\b'
             
-            parts = re.split(isolate_pattern, block, flags=re.IGNORECASE)
+            # Using DOTALL allows it to jump over \n and MALDI-TOF lines
+            parts = re.split(isolate_pattern, block, flags=re.DOTALL)
 
             num_isolates = len(parts) // 2
             purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
@@ -161,7 +160,11 @@ def parse_pdf_report(file_object):
             for i in range(1, len(parts), 2):
                 isolate_species = parts[i].strip()
                 
-                # S/I/R table might be immediately after the species, or at the bottom of the block
+                # Filter out accidental grammatical matches like "Gram negative"
+                if "Gram" in isolate_species or "Identification" in isolate_species:
+                    continue
+                
+                # Append the bottom of the document to ensure S/I/R table is scanned
                 isolate_text = parts[i+1] + "\n" + parts[-1] 
                 
                 record = {
@@ -249,7 +252,7 @@ with tab1:
                                 no_data_files.append(f"- **{f.name}** (Skipped isolates lacking S/I/R: {', '.join(skipped_iso)})")
                                 
                             if not recs and not skipped_iso:
-                                no_data_files.append(f"- **{f.name}** (No valid isolates/growth found)")
+                                no_data_files.append(f"- **{f.name}** (No bacterial growth / Negative culture)")
                                 
                     except Exception as e: 
                         error_files.append(f"{f.name} ({str(e)})")
@@ -264,7 +267,7 @@ with tab1:
                     return colors.get(val, '')
 
                 if new_records:
-                    st.success(f"Successfully processed {len(new_records)} isolates from valid reports.")
+                    st.success(f"Successfully processed {len(new_records)} valid isolates.")
                 
                 st.dataframe(final_df.style.applymap(color_sri), use_container_width=True)
                 
