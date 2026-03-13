@@ -60,6 +60,26 @@ def standardize_age(age_string):
             
     return f"{years}Y {months}M"
 
+def clean_boilerplate(text):
+    """Safely erases repeating PDF headers/footers line by line without destroying clinical data."""
+    lines = text.split('\n')
+    scrubbed_lines = []
+    junk_strings = [
+        "SYDNEY SCHOOL OF VETERINARY SCIENCE", "FACULTY OF VETERINARY SCIENCE",
+        "VETERINARY PATHOLOGY DIAGNOSTIC SERVICES", "THE UNIVERSITY OF", "SYDNEY",
+        "University of Sydney", "NSW 2006 Australia", "NSW 2006 AUSTRALIA",
+        "CRICOS 00026A", "ABN 15 211 513 464", "W WWW.SYDNEY.EDU.AU", "W: www.sydney.edu.au",
+        "Veterinary Pathology Diagnostic Services"
+    ]
+    for line in lines:
+        # Ignore lines containing known junk, page numbers, or phone numbers
+        if any(j.lower() in line.lower() for j in junk_strings) \
+           or re.search(r'Page:\s*\d+\s*of\s*\d+', line, re.IGNORECASE) \
+           or re.search(r'T[:\s]*02\s*9351\s*7456', line, re.IGNORECASE):
+            continue
+        scrubbed_lines.append(line)
+    return "\n".join(scrubbed_lines)
+
 def parse_pdf_report(file_object):
     """Extracts metadata and susceptibility from PDF robustly, handling multiple samples per file."""
     extracted_data = []
@@ -68,12 +88,8 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # --- 1. PAGE BREAK SCRUBBER ---
-        # Erases the massive header and footer blocks injected between pages (Crucial for McGee & Cherry)
-        clean_text = re.sub(r'SYDNEY SCHOOL OF VETERINARY SCIENCE.*?Page:\s*\d+\s*of\s*\d+', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
-        clean_text = re.sub(r'Veterinary Pathology Diagnostic Services.*?CRICOS\s*00026A', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
-        clean_text = re.sub(r'University of Sydney\s*\n\s*NSW 2006 Australia', '', clean_text, flags=re.IGNORECASE)
-        clean_text = re.sub(r'FACULTY OF VETERINARY SCIENCE.*?Page:\s*\d+\s*of\s*\d+', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
+        # --- 1. PAGE BREAK SCRUBBER (SAFE LINE-BY-LINE METHOD) ---
+        clean_text = clean_boilerplate(raw_text)
 
         # Metadata Extraction
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', clean_text)
@@ -96,11 +112,8 @@ def parse_pdf_report(file_object):
         # Privacy Redaction 
         safe_text = redact_text(clean_text)
         
-        # --- 2. MULTI-SAMPLE SPLITTING LOGIC (Crucial for Timber Rex) ---
-        # Splits the document into chunks based on the word "SAMPLE"
+        # --- 2. MULTI-SAMPLE SPLITTING LOGIC ---
         sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', safe_text, flags=re.IGNORECASE)
-        
-        # If no "SAMPLE" keyword is found, treat the whole document as one block
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [safe_text]
 
         antibiotics_to_check = [
@@ -113,7 +126,10 @@ def parse_pdf_report(file_object):
         ]
 
         for block in blocks_to_process:
-            # 1. Extract Sample Type & Site strictly for THIS block
+            # Check for "No growth" explicitly in this sample block
+            if re.search(r'No\s+(?:significant\s+)?growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE):
+                continue
+
             sample_type_val = "Unknown"
             sample_site_val = "NA"
             
@@ -122,28 +138,31 @@ def parse_pdf_report(file_object):
                 parts_sample = first_line.split(':', 1)
                 sample_type_val = parts_sample[0].strip()
                 sample_site_val = parts_sample[1].strip()
-            elif first_line and len(first_line) < 30: # Fallback if it's just a short word like "Urine"
+            elif first_line and len(first_line) < 30: 
                 sample_type_val = first_line
-            
-            # Check for "No growth" explicitly in this sample block
-            if re.search(r'No\s+(?:significant\s+)?growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE):
-                continue # Skip this specific block, but keep checking others
+                
+            if sample_site_val == "NA":
+                site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid):\s*(.+)', block, re.IGNORECASE)
+                if site_fallback:
+                    sample_type_val = site_fallback.group(1).strip().capitalize()
+                    sample_site_val = site_fallback.group(2).strip()
 
-            # 2. Extract isolates for THIS block
-            isolate_pattern = r'(?:\d+\.\s*)?(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:-\s*)?([^\n]+)'
-            parts = re.split(isolate_pattern, block, flags=re.IGNORECASE)
+            # --- 3. MASTER ISOLATE REGEX ---
+            # Flawlessly matches "Heavy growth - E coli" OR "1. Heavy growth - E coli" OR "1. E coli" 
+            # while jumping safely over non-species headers.
+            prefix = r'(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:-\s*)?|\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:-\s*)?)?)'
+            isolate_pattern = rf'{prefix}([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
             
-            # If standard matching grabs CFU counts (Dundby) or Identification headers (McGee), use advanced fallback
-            if len(parts) < 2 or "Identification" in parts[1] or "CFU" in parts[1]:
-                isolate_pattern_complex = r'(?:[A-Za-z]+)\s*growth(?:.*?Identification)?\s*\n\s*(?:\d+\.\s*)?(?:(?:Heavy|Moderate|Light|Mixed)\s*growth\s*-\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))'
-                parts = re.split(isolate_pattern_complex, block, flags=re.DOTALL | re.IGNORECASE)
+            parts = re.split(isolate_pattern, block, flags=re.IGNORECASE)
 
             num_isolates = len(parts) // 2
             purity_val = "Mixed" if num_isolates > 1 else "Pure" if num_isolates == 1 else "NA"
             
             for i in range(1, len(parts), 2):
                 isolate_species = parts[i].strip()
-                isolate_text = parts[i+1] + "\n" + parts[-1] # Append bottom of block to ensure Susceptibility table is captured
+                
+                # S/I/R table might be immediately after the species, or at the bottom of the block
+                isolate_text = parts[i+1] + "\n" + parts[-1] 
                 
                 record = {
                     "Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, 
