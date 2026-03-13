@@ -101,15 +101,16 @@ def parse_pdf_report(file_object):
 
         antibiotics_to_check = [
             "Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid", "Ampicillin", 
-            "Amoxicillin/Clavulanic acid", "Amikacin", "Oxacillin", "Gentamicin", 
-            "Imipenem", "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", 
+            "Amoxicillin/Clavulanic acid", "Amikacin", "Oxacillin", "Gentamicin (High Level)", 
+            "Gentamicin", "Imipenem", "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", 
             "Erythromycin", "Cefoxitin", "Rifampicin", "Doxycycline", "Cefalexin", 
             "Cefazolin", "Cefovecin", "Neomycin", "Ceftiofur", "Tobramycin", 
             "Enrofloxacin", "Polymyxin B", "Marbofloxacin", "Fusidic acid", "Nitrofurantoin"
         ]
 
         for block in blocks_to_process:
-            if re.search(r'No\s+significant\s+growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE): continue
+            # FIX: Removed the "No bacteria" abort switch. The code now safely scans past negative anaerobic notes.
+            
             sample_line = block.strip().split('\n')[0].strip()
             sample_type_val, sample_site_val = (sample_line.split(':', 1) + ["NA"])[:2] if ':' in sample_line else (sample_line, "NA")
             
@@ -128,7 +129,7 @@ def parse_pdf_report(file_object):
             for m in re.finditer(r'\b(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             
             if not isolate_names:
-                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
+                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pluralibacter|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
                     isolate_names.append(m.group(0))
 
             unique_isolates = []
@@ -148,8 +149,13 @@ def parse_pdf_report(file_object):
                 record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val.strip(), "Purity": purity_val, "Isolate": isolate_species}
                 has_sir = False
                 for abx in antibiotics_to_check:
-                    abx_pattern = re.sub(r'[\s/\-]+', r'[\s/\-]+', abx).replace("Amoxicillin", "Amox[iy]cillin").replace("Cefalexin", "(?:Cefalexin|Cephalexin)")
-                    match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b', isolate_text, re.IGNORECASE)
+                    # FIX: Correctly escaped split variables to prevent the Python regex crash
+                    abx_parts = re.split(r'[\s/\-]+', abx)
+                    abx_pattern = r'[\s/\-]+'.join([re.escape(p) for p in abx_parts])
+                    
+                    abx_pattern = abx_pattern.replace("Amoxicillin", "Amox[iy]cillin").replace("Cefalexin", "(?:Cefalexin|Cephalexin)").replace("Cefazolin", "(?:Cefazolin|Cephazolin)")
+                    
+                    match = re.search(rf'{abx_pattern}(?:[^a-zA-Z]+|(?:ug|mcg|mg|ml|L|MIC)\b)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b[*\^]*', isolate_text, re.IGNORECASE)
                     if match:
                         record[abx] = match.group(1).upper()[0]
                         has_sir = True
@@ -180,12 +186,10 @@ with tab1:
             processed_refs = set(pd.read_excel(master_file)["Lab Reference"].dropna().unique()) if master_file else set()
             new_records, dupes, skipped, errors = [], [], [], []
             
-            # --- DYNAMIC PROGRESS BAR INCORPORATED HERE ---
             total_files = len(pdf_files)
             progress_bar = st.progress(0, text="Initializing processing pipeline...")
             
             for i, f in enumerate(pdf_files):
-                # Update visual progress with filename and percentage
                 progress_percentage = (i) / total_files
                 progress_bar.progress(progress_percentage, text=f"Processing file {i+1} of {total_files}: {f.name}")
                 
@@ -198,7 +202,6 @@ with tab1:
                         if not recs and not skip_iso: skipped.append(f"{f.name} (Negative culture)")
                 except Exception as e: errors.append(f"{f.name} ({str(e)})")
 
-            # Finalize progress bar
             progress_bar.progress(1.0, text="✅ All files processed successfully!")
 
             if new_records or master_file:
@@ -210,7 +213,7 @@ with tab1:
                 buf = io.BytesIO()
                 astag_colors = {
                     "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
-                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
+                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Gentamicin (High Level)": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
                     "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
                 } 
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
@@ -282,3 +285,4 @@ with tab2:
         st.plotly_chart(px.pie(df, names='Breed', hole=0.4, template="plotly_white"), use_container_width=True)
     else:
         st.info("💡 Process data in the first tab to unlock analytics.")
+
