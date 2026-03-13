@@ -89,7 +89,7 @@ def parse_pdf_report(file_object):
             sample_line = block.strip().split('\n')[0].strip()
             sample_type_val, sample_site_val = (sample_line.split(':', 1) + ["NA"])[:2] if ':' in sample_line else (sample_line, "NA")
             if sample_site_val == "NA":
-                site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid|Implant):\s*(.+)', block, re.IGNORECASE)
+                site_fallback = re.search(r'(Swab|Urine|Tissue|Implant):\s*(.+)', block, re.IGNORECASE)
                 if site_fallback: sample_type_val, sample_site_val = site_fallback.groups()
             
             sample_site_val = redact_text(sample_site_val)
@@ -97,9 +97,8 @@ def parse_pdf_report(file_object):
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
-            
             if not isolate_names:
-                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE): isolate_names.append(m.group(0))
+                for m in re.finditer(r'\b(Staphylococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE): isolate_names.append(m.group(0))
 
             unique_isolates = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
             for i, isolate_species in enumerate(unique_isolates):
@@ -119,7 +118,18 @@ def parse_pdf_report(file_object):
                 else: skipped_isolates.append(f"{sample_type_val.strip()} - {isolate_species}")
     return extracted_data, skipped_isolates, lab_ref_val
 
-# --- 5. INTERFACE ---
+# --- 5. SIDEBAR DESIGN ---
+with st.sidebar:
+    st.markdown("<div style='text-align: center;'><div style='font-size: 50px;'>🏛️</div><h2 style='color: #002b5c;'>USYD Vet Path</h2></div>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("### 🛠️ Extraction Workflow")
+    st.write("1. 📂 **Upload** Master Excel")
+    st.write("2. 📄 **Drop** PDF Reports")
+    st.write("3. ⚡ **Process** & Redact")
+    st.write("4. 📥 **Download** Final Sheet")
+    st.success("🔒 **Privacy Mode Active**")
+
+# --- 6. MAIN INTERFACE ---
 st.title("🔬 AMR National Surveillance Pipeline")
 tab1, tab2 = st.tabs(["🚀 Data Processing", "📊 Live Analytics"])
 
@@ -140,10 +150,10 @@ with tab1:
                 if skip_iso: skipped.append(f"**{f.name}** (Excluded: {', '.join(skip_iso)})")
             pb.progress(1.0, text="✅ Done!")
             
-            # Combine master and new records to create the producing sheet
             final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
             st.session_state['processed_data'] = final_df
             
+            # --- DISPLAY WITH PINNED COLUMN ---
             st.dataframe(final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, '')), column_config={"Lab Reference": st.column_config.Column(pinned=True)})
             
             buf = io.BytesIO()
@@ -155,23 +165,44 @@ with tab1:
 with tab2:
     if 'processed_data' in st.session_state:
         df = st.session_state['processed_data']
-        st.header("📊 Global Bacterial Distribution (Master Sheet Counts)")
+        st.header("📊 Surveillance Insights")
         
-        # FIX: Explicitly count occurrences of the Isolate names in the produces master sheet
-        # This ensures we ignore the list numbers (1., 2.) and count actual spreadsheet data rows
-        species_counts = df["Isolate"].value_counts().reset_index()
-        species_counts.columns = ["Bacterial Species", "Global Occurrence Count"]
+        # Dashboard Panels
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Global Isolates", len(df))
+        m2.metric("Unique Clinical Cases", df["Lab Reference"].nunique())
         
-        fig = px.bar(
-            species_counts, 
-            x="Bacterial Species", 
-            y="Global Occurrence Count", 
-            text="Global Occurrence Count", 
-            template="plotly_white",
-            color_discrete_sequence=['#002b5c']
-        )
-        fig.update_traces(textposition='outside')
-        fig.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species Identified", yaxis_title="Total Counts in Dataset")
-        st.plotly_chart(fig, use_container_width=True)
+        df["Isolate"] = df["Isolate"].astype(str).str.strip()
+        clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "")]
+        m3.metric("Bacterial Diversity", clean_species["Isolate"].nunique())
+        
+        st.divider()
+        col_c1, col_c2 = st.columns(2)
+        
+        with col_c1:
+            st.subheader("Global Bacterial Distribution")
+            # FIX: Global count derived from spreadsheet row occurrences
+            species_counts = clean_species["Isolate"].value_counts().reset_index()
+            species_counts.columns = ["Bacterial Species", "Global Count"]
+            
+            fig_species = px.bar(species_counts, x="Bacterial Species", y="Global Count", text="Global Count", template="plotly_white")
+            fig_species.update_traces(marker_color='#002b5c')
+            fig_species.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species Identified", yaxis_title="Total Dataset Frequency")
+            st.plotly_chart(fig_species, use_container_width=True)
+
+        with col_c2:
+            st.subheader("Global Resistance Profiles")
+            sir_check = df.isin(['S', 'I', 'R']).any()
+            actual_abx_cols = sir_check[sir_check == True].index.tolist()
+            if actual_abx_cols:
+                sir_melt = df[actual_abx_cols].melt(var_name="Antibiotic", value_name="Result")
+                sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
+                fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group", color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
+                fig_sir.update_layout(xaxis_tickangle=-45)
+                st.plotly_chart(fig_sir, use_container_width=True)
+        
+        st.subheader("Breed Prevalence in Dataset")
+        st.plotly_chart(px.pie(df, names='Breed', hole=0.4, template="plotly_white"), use_container_width=True)
     else:
-        st.info("💡 Process data to unlock analytics.")
+        st.info("💡 Process data in the first tab to unlock analytics panels.")
+
