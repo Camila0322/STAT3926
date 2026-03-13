@@ -89,17 +89,17 @@ def parse_pdf_report(file_object):
             sample_line = block.strip().split('\n')[0].strip()
             sample_type_val, sample_site_val = (sample_line.split(':', 1) + ["NA"])[:2] if ':' in sample_line else (sample_line, "NA")
             if sample_site_val == "NA":
-                site_fallback = re.search(r'(Swab|Urine|Tissue|Implant):\s*(.+)', block, re.IGNORECASE)
+                site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid|Implant):\s*(.+)', block, re.IGNORECASE)
                 if site_fallback: sample_type_val, sample_site_val = site_fallback.groups()
             
             sample_site_val = redact_text(sample_site_val)
             isolate_names = []
-            # Extract species without capturing the preceding number
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
+            
             if not isolate_names:
-                for m in re.finditer(r'\b(Staphylococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE): isolate_names.append(m.group(0))
+                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Pluralibacter|Bacteroides|Peptostreptococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE): isolate_names.append(m.group(0))
 
             unique_isolates = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
             for i, isolate_species in enumerate(unique_isolates):
@@ -125,45 +125,53 @@ tab1, tab2 = st.tabs(["🚀 Data Processing", "📊 Live Analytics"])
 
 with tab1:
     c1, c2 = st.columns(2)
-    master_file = c1.file_uploader("1. Existing Master Dataset (Excel)", type=["xlsx"])
-    pdf_files = c2.file_uploader("2. New PDF Reports", type=["pdf"], accept_multiple_files=True)
-
+    master_file = c1.file_uploader("1. Master Dataset", type=["xlsx"])
+    pdf_files = c2.file_uploader("2. PDF Reports", type=["pdf"], accept_multiple_files=True)
     if st.button("🚀 Process & Synchronize"):
         if pdf_files:
             master_df = pd.read_excel(master_file) if master_file else pd.DataFrame()
-            new_records, skipped_summary = [], []
+            new_records, skipped = [], []
             total = len(pdf_files)
             pb = st.progress(0)
-            
             for i, f in enumerate(pdf_files):
-                pb.progress((i)/total, text=f"Scanning: {f.name}")
-                recs, skip, ref = parse_pdf_report(f)
+                pb.progress((i)/total, text=f"Processing: {f.name}")
+                recs, skip_iso, ref = parse_pdf_report(f)
                 new_records.extend(recs)
-                if skip: skipped_summary.append(f"**{f.name}** (Excluded: {', '.join(skip)})")
-            
+                if skip_iso: skipped.append(f"**{f.name}** (Excluded: {', '.join(skip_iso)})")
             pb.progress(1.0, text="✅ Done!")
-
+            
+            # Combine master and new records to create the producing sheet
             final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
             st.session_state['processed_data'] = final_df
             
-            st.dataframe(final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, '')), column_config={"Lab Reference": st.column_config.TextColumn(pinned=True)})
+            st.dataframe(final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, '')), column_config={"Lab Reference": st.column_config.Column(pinned=True)})
             
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                 final_df.to_excel(writer, index=False, sheet_name="AMR")
             st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            
-            if skipped_summary:
-                st.info("### 📋 Skipped Data Summary\n" + "\n".join([f"- {s}" for s in skipped_summary]))
+            if skipped: st.info("### 📋 Skipped Data Summary\n" + "\n".join([f"- {s}" for s in skipped]))
 
 with tab2:
     if 'processed_data' in st.session_state:
         df = st.session_state['processed_data']
-        st.header("📊 Global Surveillance Analytics")
-        # Global frequency counting logic
-        species_counts = df["Isolate"].value_counts().reset_index()
-        species_counts.columns = ["Bacterial Species", "Global Count"]
+        st.header("📊 Global Bacterial Distribution (Master Sheet Counts)")
         
-        st.plotly_chart(px.bar(species_counts, x="Bacterial Species", y="Global Count", text="Global Count", template="plotly_white", color_discrete_sequence=['#002b5c']), use_container_width=True)
+        # FIX: Explicitly count occurrences of the Isolate names in the produces master sheet
+        # This ensures we ignore the list numbers (1., 2.) and count actual spreadsheet data rows
+        species_counts = df["Isolate"].value_counts().reset_index()
+        species_counts.columns = ["Bacterial Species", "Global Occurrence Count"]
+        
+        fig = px.bar(
+            species_counts, 
+            x="Bacterial Species", 
+            y="Global Occurrence Count", 
+            text="Global Occurrence Count", 
+            template="plotly_white",
+            color_discrete_sequence=['#002b5c']
+        )
+        fig.update_traces(textposition='outside')
+        fig.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species Identified", yaxis_title="Total Counts in Dataset")
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("💡 Process data to unlock analytics.")
