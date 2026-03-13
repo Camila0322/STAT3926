@@ -109,8 +109,7 @@ def parse_pdf_report(file_object):
         ]
 
         for block in blocks_to_process:
-            # REMOVED the early abort switch. The script will now scan naturally.
-            
+            if re.search(r'No\s+significant\s+growth|No\s+bacteria\s+have\s+been\s+isolated', block, re.IGNORECASE): continue
             sample_line = block.strip().split('\n')[0].strip()
             sample_type_val, sample_site_val = (sample_line.split(':', 1) + ["NA"])[:2] if ':' in sample_line else (sample_line, "NA")
             
@@ -180,7 +179,16 @@ with tab1:
         if pdf_files:
             processed_refs = set(pd.read_excel(master_file)["Lab Reference"].dropna().unique()) if master_file else set()
             new_records, dupes, skipped, errors = [], [], [], []
-            for f in pdf_files:
+            
+            # --- DYNAMIC PROGRESS BAR INCORPORATED HERE ---
+            total_files = len(pdf_files)
+            progress_bar = st.progress(0, text="Initializing processing pipeline...")
+            
+            for i, f in enumerate(pdf_files):
+                # Update visual progress with filename and percentage
+                progress_percentage = (i) / total_files
+                progress_bar.progress(progress_percentage, text=f"Processing file {i+1} of {total_files}: {f.name}")
+                
                 try:
                     recs, skip_iso, ref = parse_pdf_report(f)
                     if ref in processed_refs: dupes.append(f.name)
@@ -189,6 +197,9 @@ with tab1:
                         if skip_iso: skipped.append(f"{f.name} ({', '.join(skip_iso)})")
                         if not recs and not skip_iso: skipped.append(f"{f.name} (Negative culture)")
                 except Exception as e: errors.append(f"{f.name} ({str(e)})")
+
+            # Finalize progress bar
+            progress_bar.progress(1.0, text="✅ All files processed successfully!")
 
             if new_records or master_file:
                 final_df = pd.concat([pd.read_excel(master_file), pd.DataFrame(new_records)], ignore_index=True) if master_file else pd.DataFrame(new_records)
@@ -213,4 +224,61 @@ with tab1:
             st.divider()
             if dupes: st.warning(f"**Skipped Duplicates:** {', '.join(dupes)}")
             if skipped: st.info(f"**Skipped (No S/I/R or No Growth):**\n" + "\n".join(skipped))
+            if errors: st.error(f"**Failed to Analyze:**\n" + "\n".join(errors))
 
+with tab2:
+    if 'processed_data' in st.session_state:
+        df = st.session_state['processed_data']
+        st.header("📊 Surveillance Insights")
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Isolates", len(df))
+        m2.metric("Unique Cases", df["Lab Reference"].nunique())
+        
+        df["Isolate"] = df["Isolate"].astype(str).str.strip()
+        clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "") & (df["Isolate"] != "None")]
+        m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
+        st.divider()
+        
+        col_c1, col_c2 = st.columns(2)
+        
+        with col_c1:
+            st.subheader("Bacterial Species Distribution")
+            species_counts = clean_species["Isolate"].value_counts().reset_index()
+            species_counts.columns = ["Bacterial Species", "Isolate Count"]
+            
+            fig_species = px.bar(
+                species_counts, 
+                x="Bacterial Species", 
+                y="Isolate Count", 
+                text="Isolate Count", 
+                template="plotly_white"
+            )
+            fig_species.update_traces(
+                textposition='outside', 
+                marker_color='#002b5c'  
+            )
+            fig_species.update_layout(
+                xaxis={'categoryorder':'total descending'},
+                xaxis_title="Species",
+                yaxis_title="Count",
+                margin=dict(t=20, b=20)
+            )
+            st.plotly_chart(fig_species, use_container_width=True)
+
+        with col_c2:
+            st.subheader("Susceptibility Profiles")
+            sir_check = df.isin(['S', 'I', 'R']).any()
+            actual_abx_cols = sir_check[sir_check == True].index.tolist()
+            if actual_abx_cols:
+                sir_melt = df[actual_abx_cols].melt(var_name="Antibiotic", value_name="Result")
+                sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
+                fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group",
+                                       color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
+                fig_sir.update_layout(xaxis_tickangle=-45, margin=dict(t=20, b=20))
+                st.plotly_chart(fig_sir, use_container_width=True)
+            
+        st.subheader("Breed Prevalence")
+        st.plotly_chart(px.pie(df, names='Breed', hole=0.4, template="plotly_white"), use_container_width=True)
+    else:
+        st.info("💡 Process data in the first tab to unlock analytics.")
