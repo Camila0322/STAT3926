@@ -50,6 +50,10 @@ def standardize_age(age_string):
     if year_match: years = int(year_match.group(1))
     month_match = re.search(r'(\d+)\s*(m|month|months)', age_string, re.IGNORECASE)
     if month_match: months = int(month_match.group(1))
+    if years == 0 and months == 0:
+        week_match = re.search(r'(\d+)\s*(w|week|weeks)', age_string, re.IGNORECASE)
+        if week_match: months = int(week_match.group(1)) // 4
+        else: return age_string 
     return f"{years}Y {months}M"
 
 def clean_boilerplate(text):
@@ -65,18 +69,16 @@ def clean_boilerplate(text):
     return "\n".join(scrubbed_lines)
 
 def clean_isolate_name(name):
-    """Deep scrubber and normalizer to ensure Pandas groups perfectly."""
+    """Deep scrubber to ensure Pandas groups strings perfectly."""
     if pd.isna(name): return "NA"
     name = str(name)
-    # Strip prefixes and growth strings
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
     
-    # EXACT NORMALIZATION: Remove double spaces, strip edges, and capitalize first letter only (Genus species)
+    # Force pure capitalization to prevent invisible mismatch duplicates
     name = " ".join(name.split()).capitalize()
-    
     return name if name else "NA"
 
 def parse_pdf_report(file_object):
@@ -183,15 +185,23 @@ with tab1:
                 
                 final_df = final_df.drop_duplicates(subset=['Lab Reference', 'Sample Type', 'Site', 'Isolate'], keep='last')
                 
-                # The data saved to session state is EXACTLY what is displayed in Tab 1
                 st.session_state['processed_data'] = final_df
                 
                 styled_df = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
                 st.dataframe(styled_df, use_container_width=True)
                 
                 buf = io.BytesIO()
+                astag_colors = {
+                    "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
+                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
+                    "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
+                } 
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                     styled_df.to_excel(writer, index=False, sheet_name="AMR Surveillance")
+                    ws = writer.sheets["AMR Surveillance"]
+                    for col_num, col_name in enumerate(final_df.columns, 1):
+                        if col_name in astag_colors:
+                            ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
                 st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
             st.divider()
@@ -218,14 +228,26 @@ with tab2:
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
-        # MATH CALCULATION
-        species_counts = clean_species.groupby("Isolate").size().reset_index(name="Count")
-        species_counts = species_counts.sort_values(by="Count", ascending=False)
+        # PLOTLY FIX: Rename columns and force exact categorical ordering
+        species_counts = clean_species["Isolate"].value_counts().reset_index()
+        species_counts.columns = ["Bacterial Species", "Total Occurrences"]
         
         with col_chart:
-            fig_species = px.bar(species_counts, x="Isolate", y="Count", text="Count", template="plotly_white")
+            fig_species = px.bar(
+                species_counts, 
+                x="Bacterial Species", 
+                y="Total Occurrences", 
+                text="Total Occurrences", 
+                template="plotly_white"
+            )
             fig_species.update_traces(textposition='outside', marker_color='#002b5c')
-            fig_species.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species Identified", yaxis_title="Total Rows in Dataset")
+            
+            # This line forces Plotly to map the bars EXACTLY to the numbers, not the alphabetical index
+            fig_species.update_layout(
+                xaxis=dict(type='category', categoryorder='array', categoryarray=species_counts['Bacterial Species']),
+                xaxis_title="Species Identified", 
+                yaxis_title="Total Rows in Dataset"
+            )
             st.plotly_chart(fig_species, use_container_width=True)
             
         with col_data:
