@@ -69,15 +69,12 @@ def clean_boilerplate(text):
     return "\n".join(scrubbed_lines)
 
 def clean_isolate_name(name):
-    """Deep scrubber to ensure Pandas groups strings perfectly."""
     if pd.isna(name): return "NA"
     name = str(name)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
-    
-    # Force pure capitalization to prevent invisible mismatch duplicates
     name = " ".join(name.split()).capitalize()
     return name if name else "NA"
 
@@ -179,12 +176,10 @@ with tab1:
             if new_records or not master_df.empty:
                 final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
                 
-                # --- EXTREME DEDUPLICATION & CLEANING ---
                 if "Isolate" in final_df.columns:
                     final_df["Isolate"] = final_df["Isolate"].apply(clean_isolate_name)
                 
                 final_df = final_df.drop_duplicates(subset=['Lab Reference', 'Sample Type', 'Site', 'Isolate'], keep='last')
-                
                 st.session_state['processed_data'] = final_df
                 
                 styled_df = final_df.style.applymap(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
@@ -224,36 +219,35 @@ with tab2:
         
         st.divider()
         
-        # --- VERIFICATION LAYOUT ---
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
-        # PLOTLY FIX: Rename columns and force exact categorical ordering
-        species_counts = clean_species["Isolate"].value_counts().reset_index()
-        species_counts.columns = ["Bacterial Species", "Total Occurrences"]
+        # 1. CREATE VERIFICATION DATAFRAME FIRST
+        verification_df = clean_species["Isolate"].value_counts().reset_index()
+        verification_df.columns = ["Isolate", "Count"]
         
         with col_chart:
+            # 2. FEED VERIFICATION DATAFRAME DIRECTLY TO PLOTLY
             fig_species = px.bar(
-                species_counts, 
-                x="Bacterial Species", 
-                y="Total Occurrences", 
-                text="Total Occurrences", 
+                verification_df, 
+                x="Isolate", 
+                y="Count", 
+                text="Count", 
                 template="plotly_white"
             )
             fig_species.update_traces(textposition='outside', marker_color='#002b5c')
-            
-            # This line forces Plotly to map the bars EXACTLY to the numbers, not the alphabetical index
             fig_species.update_layout(
-                xaxis=dict(type='category', categoryorder='array', categoryarray=species_counts['Bacterial Species']),
+                xaxis=dict(categoryorder='total descending'), # Forces plotting exactly as calculated
                 xaxis_title="Species Identified", 
                 yaxis_title="Total Rows in Dataset"
             )
             st.plotly_chart(fig_species, use_container_width=True)
             
         with col_data:
+            # 3. DISPLAY THE EXACT SAME DATAFRAME
             st.markdown("**Data Verification Table**")
             st.markdown("*This confirms the graph matches Tab 1 exactly.*")
-            st.dataframe(species_counts, use_container_width=True, hide_index=True)
+            st.dataframe(verification_df, use_container_width=True, hide_index=True)
             
         st.divider()
         
