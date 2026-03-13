@@ -97,8 +97,9 @@ def parse_pdf_report(file_object):
         
         clean_text = clean_boilerplate(raw_text)
         
-        # FENCING: Splitting the document precisely at "SAMPLE X"
-        sample_blocks = re.split(r'\bSAMPLE(?:\s+\d+)?\s*\n+', clean_text, flags=re.IGNORECASE)
+        # CRITICAL FIX: The regex now demands that "SAMPLE" is the ONLY thing on the line,
+        # preventing it from slicing the "quality of the sample" disclaimer in half!
+        sample_blocks = re.split(r'^SAMPLE(?:\s+\d+)?\s*$', clean_text, flags=re.IGNORECASE | re.MULTILINE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
         antibiotics_to_check = [
