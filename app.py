@@ -96,16 +96,13 @@ def parse_pdf_report(file_object):
             neutered_val = "Yes" if ("Neutered" in g_str or "Spayed" in g_str) else "No"
         
         clean_text = clean_boilerplate(raw_text)
-        
-        # CRITICAL FIX: The regex now demands that "SAMPLE" is the ONLY thing on the line,
-        # preventing it from slicing the "quality of the sample" disclaimer in half!
         sample_blocks = re.split(r'^SAMPLE(?:\s+\d+)?\s*$', clean_text, flags=re.IGNORECASE | re.MULTILINE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
         antibiotics_to_check = [
             "Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid", "Ampicillin", 
-            "Amoxicillin/Clavulanic acid", "Amikacin", "Oxacillin", "Gentamicin (High Level)", 
-            "Gentamicin", "Imipenem", "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", 
+            "Amoxicillin/Clavulanic acid", "Amikacin", "Oxacillin", "Gentamicin", 
+            "Imipenem", "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", 
             "Erythromycin", "Cefoxitin", "Rifampicin", "Doxycycline", "Cefalexin", 
             "Cefazolin", "Cefovecin", "Neomycin", "Ceftiofur", "Tobramycin", 
             "Enrofloxacin", "Polymyxin B", "Marbofloxacin", "Fusidic acid", "Nitrofurantoin"
@@ -126,8 +123,7 @@ def parse_pdf_report(file_object):
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
-            for m in re.finditer(r'\b[1-9]\.\s+(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
-            for m in re.finditer(r'\b(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
+            for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             
             if not isolate_names:
                 for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pluralibacter|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE):
@@ -183,23 +179,24 @@ with tab1:
     if st.button("🚀 Process & Synchronize"):
         if pdf_files:
             processed_refs = set(pd.read_excel(master_file)["Lab Reference"].dropna().unique()) if master_file else set()
-            new_records, dupes, skipped, errors = [], [], [], []
+            new_records, dupes, skipped_list, errors = [], [], [], []
             
             total_files = len(pdf_files)
             progress_bar = st.progress(0, text="Initializing processing pipeline...")
             
             for i, f in enumerate(pdf_files):
-                progress_percentage = (i) / total_files
-                progress_bar.progress(progress_percentage, text=f"Processing file {i+1} of {total_files}: {f.name}")
-                
+                progress_bar.progress((i)/total_files, text=f"Processing file {i+1} of {total_files}: {f.name}")
                 try:
                     recs, skip_iso, ref = parse_pdf_report(f)
                     if ref in processed_refs: dupes.append(f.name)
                     else:
                         if recs: new_records.extend(recs); processed_refs.add(ref)
-                        if skip_iso: skipped.append(f"{f.name} ({', '.join(skip_iso)})")
-                        if not recs and not skip_iso: skipped.append(f"{f.name} (Negative culture)")
-                except Exception as e: errors.append(f"{f.name} ({str(e)})")
+                        # GROUPED BULLET POINT LOGIC
+                        if skip_iso:
+                            skipped_list.append(f"**{f.name}** (Excluded: {', '.join(skip_iso)})")
+                        elif not recs:
+                            skipped_list.append(f"**{f.name}** (No bacterial growth identified)")
+                except Exception as e: errors.append(f"**{f.name}** ({str(e)})")
 
             progress_bar.progress(1.0, text="✅ All files processed successfully!")
 
@@ -212,7 +209,7 @@ with tab1:
                 buf = io.BytesIO()
                 astag_colors = {
                     "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
-                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Gentamicin (High Level)": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
+                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
                     "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
                 } 
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
@@ -225,49 +222,35 @@ with tab1:
             
             st.divider()
             if dupes: st.warning(f"**Skipped Duplicates:** {', '.join(dupes)}")
-            if skipped: st.info(f"**Skipped (No S/I/R or No Growth):**\n" + "\n".join(skipped))
-            if errors: st.error(f"**Failed to Analyze:**\n" + "\n".join(errors))
+            if skipped_list: 
+                st.info("### 📋 Skipped Data Summary")
+                for item in skipped_list:
+                    st.write(f"- {item}")
+            if errors: 
+                st.error("### ⚠️ Analysis Errors")
+                for err in errors:
+                    st.write(f"- {err}")
 
 with tab2:
     if 'processed_data' in st.session_state:
         df = st.session_state['processed_data']
         st.header("📊 Surveillance Insights")
-        
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Isolates", len(df))
         m2.metric("Unique Cases", df["Lab Reference"].nunique())
-        
         df["Isolate"] = df["Isolate"].astype(str).str.strip()
         clean_species = df[(df["Isolate"] != "nan") & (df["Isolate"] != "NA") & (df["Isolate"] != "") & (df["Isolate"] != "None")]
         m3.metric("Bacterial Species", clean_species["Isolate"].nunique())
         st.divider()
-        
         col_c1, col_c2 = st.columns(2)
-        
         with col_c1:
             st.subheader("Bacterial Species Distribution")
             species_counts = clean_species["Isolate"].value_counts().reset_index()
             species_counts.columns = ["Bacterial Species", "Isolate Count"]
-            
-            fig_species = px.bar(
-                species_counts, 
-                x="Bacterial Species", 
-                y="Isolate Count", 
-                text="Isolate Count", 
-                template="plotly_white"
-            )
-            fig_species.update_traces(
-                textposition='outside', 
-                marker_color='#002b5c'  
-            )
-            fig_species.update_layout(
-                xaxis={'categoryorder':'total descending'},
-                xaxis_title="Species",
-                yaxis_title="Count",
-                margin=dict(t=20, b=20)
-            )
+            fig_species = px.bar(species_counts, x="Bacterial Species", y="Isolate Count", text="Isolate Count", template="plotly_white")
+            fig_species.update_traces(textposition='outside', marker_color='#002b5c')
+            fig_species.update_layout(xaxis={'categoryorder':'total descending'}, xaxis_title="Species", yaxis_title="Count", margin=dict(t=20, b=20))
             st.plotly_chart(fig_species, use_container_width=True)
-
         with col_c2:
             st.subheader("Susceptibility Profiles")
             sir_check = df.isin(['S', 'I', 'R']).any()
@@ -275,11 +258,9 @@ with tab2:
             if actual_abx_cols:
                 sir_melt = df[actual_abx_cols].melt(var_name="Antibiotic", value_name="Result")
                 sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
-                fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group",
-                                       color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
+                fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group", color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
                 fig_sir.update_layout(xaxis_tickangle=-45, margin=dict(t=20, b=20))
                 st.plotly_chart(fig_sir, use_container_width=True)
-            
         st.subheader("Breed Prevalence")
         st.plotly_chart(px.pie(df, names='Breed', hole=0.4, template="plotly_white"), use_container_width=True)
     else:
