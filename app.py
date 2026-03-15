@@ -213,7 +213,7 @@ with tab2:
         clean_species = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Isolates", len(clean_species))
+        m1.metric("Total Rows in Table", len(clean_species))
         m2.metric("Unique Clinical Cases", clean_species["Lab Reference"].nunique())
         m3.metric("Unique Bacteria Types", clean_species["Isolate"].nunique())
         
@@ -222,7 +222,6 @@ with tab2:
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
-        # EXPLICIT NUMERIC CASTING TO PREVENT INDEX PLOTTING
         counts = clean_species["Isolate"].value_counts()
         verification_df = pd.DataFrame({
             "Bacterial Species": counts.index.astype(str),
@@ -230,23 +229,22 @@ with tab2:
         })
         
         with col_chart:
-            # Replicating ggplot2's theme_classic() in Plotly
             fig_species = px.bar(
                 verification_df, 
                 x="Bacterial Species", 
                 y="Number of Isolates", 
                 text="Number of Isolates", 
-                template="simple_white" # Strips gridlines and backgrounds
+                template="simple_white" 
             )
             fig_species.update_traces(textposition='outside', marker_color='#002b5c')
             
-            # Enforce solid black axis lines and strictly linear y-axis
+            # --- BOLD AXIS LABELS & LARGER BASE FONT SIZE ---
             fig_species.update_layout(
                 yaxis=dict(type='linear'),
                 xaxis=dict(categoryorder='total descending'),
-                xaxis_title="Species Identified", 
-                yaxis_title="Number of Isolates",
-                font=dict(color="black")
+                xaxis_title="<b>Species Identified</b>", 
+                yaxis_title="<b>Number of Isolates</b>",
+                font=dict(color="black", size=16) # Base size set to 16
             )
             fig_species.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
             fig_species.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
@@ -270,7 +268,6 @@ with tab2:
             result_mapping = {'S': 'Sensitive', 'I': 'Intermediate', 'R': 'Resistant'}
             sir_melt['Result'] = sir_melt['Result'].map(result_mapping)
             
-            # Applying theme_classic() aesthetic here too
             fig_sir = px.histogram(
                 sir_melt, 
                 x="Antibiotic", 
@@ -281,9 +278,13 @@ with tab2:
             )
             
             fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
+            
+            # --- BOLD AXIS LABELS & LARGER BASE FONT SIZE ---
             fig_sir.update_layout(
                 xaxis_tickangle=-45,
-                font=dict(color="black")
+                xaxis_title="<b>Antibiotic</b>",
+                yaxis_title="<b>Count</b>",
+                font=dict(color="black", size=16) # Base size set to 16
             )
             fig_sir.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
             fig_sir.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
@@ -298,7 +299,8 @@ with tab2:
         canine_df = unique_demographics[unique_demographics["Species"].str.contains("Canine", case=False, na=False)]
         with pc1:
             if not canine_df.empty:
-                fig_canine = px.pie(canine_df, names='Breed', hole=0.4, title="🐶 Canine Breeds", template="simple_white")
+                fig_canine = px.pie(canine_df, names='Breed', hole=0.4, title="<b>🐶 Canine Breeds</b>", template="simple_white")
+                fig_canine.update_layout(font=dict(color="black", size=16)) # Enlarged font for Pie
                 st.plotly_chart(fig_canine, use_container_width=True)
             else:
                 st.info("No Canine data identified in this batch.")
@@ -306,7 +308,8 @@ with tab2:
         feline_df = unique_demographics[unique_demographics["Species"].str.contains("Feline", case=False, na=False)]
         with pc2:
             if not feline_df.empty:
-                fig_feline = px.pie(feline_df, names='Breed', hole=0.4, title="🐱 Feline Breeds", template="simple_white", color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig_feline = px.pie(feline_df, names='Breed', hole=0.4, title="<b>🐱 Feline Breeds</b>", template="simple_white", color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig_feline.update_layout(font=dict(color="black", size=16)) # Enlarged font for Pie
                 st.plotly_chart(fig_feline, use_container_width=True)
             else:
                 st.info("No Feline data identified in this batch.")
