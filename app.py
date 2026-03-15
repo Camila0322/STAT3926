@@ -107,7 +107,10 @@ def parse_pdf_report(file_object):
                 site_fallback = re.search(r'(Swab|Urine|Tissue|Fluid|Implant):\s*(.+)', block, re.IGNORECASE)
                 if site_fallback: sample_type_val, sample_site_val = site_fallback.groups()
             
-            sample_site_val = redact_text(sample_site_val)
+            sample_site_val = redact_text(sample_site_val).strip()
+            if sample_site_val:
+                sample_site_val = sample_site_val[0].upper() + sample_site_val[1:]
+
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
@@ -123,7 +126,7 @@ def parse_pdf_report(file_object):
                 end_idx = block.find(unique_isolates[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_isolates) else len(block)
                 isolate_text = block[start_idx:end_idx]
                 
-                record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val.strip(), "Purity": "Mixed" if len(unique_isolates)>1 else "Pure", "Isolate": iso_clean}
+                record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val, "Purity": "Mixed" if len(unique_isolates)>1 else "Pure", "Isolate": iso_clean}
                 has_sir = False
                 for abx in antibiotics_to_check:
                     abx_esc = re.escape(abx).replace(r'Amoxicillin', r'Amox[iy]cillin').replace(r'Cefalexin', r'(?:Cefalexin|Cephalexin)')
@@ -234,7 +237,6 @@ with tab2:
         })
         
         with col_chart:
-            # TEXT PARAMETERS REMOVED FROM BARS
             fig_species = go.Figure(data=[
                 go.Bar(
                     x=x_categories,
