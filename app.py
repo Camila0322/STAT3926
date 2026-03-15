@@ -77,7 +77,7 @@ def clean_isolate_name(name):
 
 def parse_pdf_report(file_object):
     extracted_data = []
-    skipped_isolates = []
+    all_identified_isolates = []
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
@@ -107,21 +107,23 @@ def parse_pdf_report(file_object):
             if sample_site_val and sample_site_val != "NA":
                 sample_site_val = sample_site_val[0].upper() + sample_site_val[1:]
 
+            # 1. FIND ALL IDENTIFIED ISOLATES (INCLUDING CHERRY'S LIST)
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
+            for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             
-            if not isolate_names:
-                for m in re.finditer(r'\b(Staphylococcus|Streptococcus|Enterococcus|Pseudomonas|Proteus|Escherichia|Klebsiella|Bacteroides|Peptostreptococcus|Pluralibacter|Pasteurella|Enterobacter|Acinetobacter|Corynebacterium|Bacillus|Malassezia|Candida|Micrococcus)\s+([a-z]+|spp\.|sp\.)\b', block, re.IGNORECASE): isolate_names.append(m.group(0))
+            unique_ids = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
+            all_identified_isolates.extend([clean_isolate_name(i) for i in unique_ids])
 
-            unique_isolates = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
-            for i, isolate_species in enumerate(unique_isolates):
+            # 2. CHECK WHICH ONES HAVE TABLES
+            for i, isolate_species in enumerate(unique_ids):
                 iso_clean = clean_isolate_name(isolate_species)
                 start_idx = block.find(isolate_species)
-                end_idx = block.find(unique_isolates[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_isolates) else len(block)
+                end_idx = block.find(unique_ids[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_ids) else len(block)
                 isolate_text = block[start_idx:end_idx]
                 
-                record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val, "Purity": "Mixed" if len(unique_isolates)>1 else "Pure", "Isolate": iso_clean}
+                record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val, "Purity": "Mixed" if len(unique_ids)>1 else "Pure", "Isolate": iso_clean}
                 has_sir = False
                 for abx in antibiotics_to_check:
                     abx_esc = re.escape(abx).replace(r'Amoxicillin', r'Amox[iy]cillin').replace(r'Cefalexin', r'(?:Cefalexin|Cephalexin)')
@@ -132,8 +134,12 @@ def parse_pdf_report(file_object):
                     else: record[abx] = "NA"
                 
                 if has_sir: extracted_data.append(record)
-                else: skipped_isolates.append(iso_clean)
-    return extracted_data, skipped_isolates, lab_ref_val
+
+    # 3. COMPARE IDENTIFIED VS PROCESSED TO FIND SKIPS
+    processed_isolates = [r["Isolate"] for r in extracted_data]
+    skipped_list = [iso for iso in list(set(all_identified_isolates)) if iso not in processed_isolates]
+    
+    return extracted_data, skipped_list, lab_ref_val
 
 # --- 5. SIDEBAR DESIGN ---
 with st.sidebar:
@@ -158,22 +164,20 @@ with tab1:
             new_records, dupes, skipped_list, errors = [], [], [], []
             
             total_files = len(pdf_files)
-            progress_bar = st.progress(0, text="Initializing processing pipeline...")
+            progress_bar = st.progress(0, text="Initializing...")
             
             for i, f in enumerate(pdf_files):
-                progress_bar.progress((i)/total_files, text=f"Processing file {i+1} of {total_files}: {f.name}")
+                progress_bar.progress((i)/total_files, text=f"Processing: {f.name}")
                 try:
                     recs, skip_iso, ref = parse_pdf_report(f)
                     if ref in processed_refs: dupes.append(f.name)
                     else:
                         if recs: new_records.extend(recs); processed_refs.add(ref)
                         if skip_iso:
-                            skipped_list.append(f"**{f.name}** (Skipped Isolates: {', '.join(skip_iso)})")
-                        elif not recs:
-                            skipped_list.append(f"**{f.name}** (No growth or AST data found)")
+                            skipped_list.append(f"**{f.name}** (Skipped: {', '.join(skip_iso)})")
                 except Exception as e: errors.append(f"**{f.name}** ({str(e)})")
 
-            progress_bar.progress(1.0, text="✅ All files processed successfully!")
+            progress_bar.progress(1.0, text="✅ Done!")
 
             if new_records or not master_df.empty:
                 final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
@@ -188,7 +192,6 @@ with tab1:
                     styled_df.to_excel(writer, index=False, sheet_name="AMR Surveillance")
                 st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
-            st.divider()
             if dupes: st.warning(f"**Skipped Duplicates:** {', '.join(dupes)}")
             if skipped_list: 
                 st.info("### 📋 Skipped Data Summary")
@@ -198,7 +201,6 @@ with tab2:
     if 'processed_data' in st.session_state:
         df = st.session_state['processed_data'].copy()
         st.header("📊 Surveillance Insights")
-        
         clean_species = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Number of Isolates", len(clean_species))
@@ -219,7 +221,7 @@ with tab2:
             st.plotly_chart(fig_species, use_container_width=True)
             
         with col_data:
-            st.dataframe(pd.DataFrame({"Bacterial Species": x_cats, "Number of Isolates": y_vals}), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame({"Isolate": x_cats, "Count": y_vals}), use_container_width=True, hide_index=True)
             
         st.divider()
         st.subheader("Global Resistance Profiles")
