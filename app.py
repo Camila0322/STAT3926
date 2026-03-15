@@ -104,7 +104,6 @@ def parse_pdf_report(file_object):
                 if site_fallback: sample_type_val, sample_site_val = site_fallback.groups()
             
             sample_site_val = redact_text(sample_site_val).strip()
-            # Enforce first letter capitalization for the site
             if sample_site_val and sample_site_val != "NA":
                 sample_site_val = sample_site_val[0].upper() + sample_site_val[1:]
 
@@ -161,11 +160,9 @@ with tab1:
             processed_refs = set(master_df["Lab Reference"].dropna().unique()) if not master_df.empty else set()
             new_records, dupes, skipped_msgs = [], [], []
             
-            total_files = len(pdf_files)
-            progress_bar = st.progress(0, text="Initializing...")
-            
+            pb = st.progress(0, text="Initializing...")
             for i, f in enumerate(pdf_files):
-                progress_bar.progress((i)/total_files, text=f"Processing: {f.name}")
+                pb.progress((i)/len(pdf_files), text=f"Processing: {f.name}")
                 try:
                     recs, skips, ref = parse_pdf_report(f)
                     if ref in processed_refs: dupes.append(f.name)
@@ -173,8 +170,7 @@ with tab1:
                         if recs: new_records.extend(recs); processed_refs.add(ref)
                         if skips: skipped_msgs.append(f"**{f.name}** (Skipped: {', '.join(skips)})")
                 except Exception as e: st.error(f"Error {f.name}: {str(e)}")
-
-            progress_bar.progress(1.0, text="✅ Done!")
+            pb.progress(1.0, text="✅ Done!")
 
             if new_records or not master_df.empty:
                 final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
@@ -238,11 +234,13 @@ with tab2:
                 xaxis_title="<b>Species Identified</b>",
                 yaxis_title="<b>Total Number of Isolates</b>",
                 font=dict(color="black", size=18),
-                margin=dict(b=0, t=50, l=0, r=0) # Flush-to-axis fix
+                margin=dict(b=0, t=50, l=0, r=0)
             )
             fig_species.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
             fig_species.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y * 1.1], rangemode="tozero")
             st.plotly_chart(fig_species, use_container_width=True)
+            # FIGURE CAPTION
+            st.caption("Figure 1: Distribution of bacterial species identified across all processed clinical reports.")
             
         with col_data:
             st.markdown("**Data Verification Table**")
@@ -267,14 +265,20 @@ with tab2:
             fig_sir.update_layout(
                 xaxis_tickangle=-45, 
                 font=dict(color="black", size=18), 
-                legend=dict(font=dict(size=16), title_text="<b>Sensitivity</b>"),
-                margin=dict(b=0, t=50, l=0, r=0) # Flush-to-axis fix
+                # INCREASED LEGEND TITLE FONT SIZE
+                legend=dict(
+                    font=dict(size=16), 
+                    title=dict(text="<b>Sensitivity</b>", font=dict(size=22))
+                ),
+                margin=dict(b=0, t=50, l=0, r=0)
             )
             fig_sir.update_xaxes(title_text="<b>Antibiotic</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
             
             max_c = melted.groupby(['ABx', 'Res']).size().max() if not melted.empty else 10
             fig_sir.update_yaxes(title_text="<b>Count</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_c * 1.1], rangemode="tozero")
             st.plotly_chart(fig_sir, use_container_width=True)
+            # FIGURE CAPTION
+            st.caption("Figure 2: Overall antimicrobial susceptibility profiles (Sensitive, Intermediate, Resistant) across all tested isolates.")
                 
         st.divider()
         st.subheader("Species-Specific Breed Prevalence")
@@ -289,6 +293,8 @@ with tab2:
                 fig_c.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_c.update_layout(font=dict(color="black", size=18))
                 st.plotly_chart(fig_c, use_container_width=True)
+                # FIGURE CAPTION
+                st.caption("Figure 3a: Demographic distribution of canine breeds per unique clinical case.")
             else: st.info("No Canine data identified.")
 
         feline_df = unique_demo[unique_demo["Species"].str.contains("Feline", case=False, na=False)]
@@ -298,6 +304,8 @@ with tab2:
                 fig_f.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_f.update_layout(font=dict(color="black", size=18))
                 st.plotly_chart(fig_f, use_container_width=True)
+                # FIGURE CAPTION
+                st.caption("Figure 3b: Demographic distribution of feline breeds per unique clinical case.")
             else: st.info("No Feline data identified.")
     else:
         st.info("💡 Process data in tab 1 to unlock analytics.")
