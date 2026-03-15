@@ -213,7 +213,6 @@ with tab2:
         clean_species = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
         
         m1, m2, m3 = st.columns(3)
-        # Updated Metric Title
         m1.metric("Total Number of Isolates", len(clean_species))
         m2.metric("Unique Clinical Cases", clean_species["Lab Reference"].nunique())
         m3.metric("Unique Bacteria Types", clean_species["Isolate"].nunique())
@@ -239,14 +238,12 @@ with tab2:
             )
             fig_species.update_traces(textposition='outside', marker_color='#002b5c')
             
-            # --- EXPLICIT SIZING FOR TICKS AND AXIS LABELS ---
             fig_species.update_layout(
                 yaxis=dict(type='linear'),
                 xaxis=dict(categoryorder='total descending'),
                 font=dict(color="black")
             )
             
-            # Update X axis titles and ticks
             fig_species.update_xaxes(
                 title_text="<b>Species Identified</b>",
                 title_font=dict(size=20, color="black"),
@@ -254,7 +251,6 @@ with tab2:
                 showline=True, linewidth=1, linecolor='black', mirror=False
             )
             
-            # Update Y axis titles and ticks
             fig_species.update_yaxes(
                 title_text="<b>Total Number of Isolates</b>",
                 title_font=dict(size=20, color="black"),
@@ -287,6 +283,7 @@ with tab2:
                 color="Result", 
                 barmode="group", 
                 color_discrete_map={'Sensitive': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
+                category_orders={"Result": ["Resistant", "Intermediate", "Sensitive"]}, 
                 template="simple_white"
             )
             
@@ -298,7 +295,6 @@ with tab2:
                 legend=dict(font=dict(size=16), title_font_size=18)
             )
             
-            # --- EXPLICIT SIZING FOR TICKS AND AXIS LABELS ---
             fig_sir.update_xaxes(
                 title_text="<b>Antibiotic</b>",
                 title_font=dict(size=20, color="black"),
@@ -320,10 +316,24 @@ with tab2:
         
         unique_demographics = df.drop_duplicates(subset=['Lab Reference'])
         
+        # --- CUSTOM COLOR PALETTE: No Red, Green, or Yellow ---
+        breed_safe_colors = [
+            '#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', 
+            '#002b5c', '#6a5acd', '#008b8b', '#ff69b4', '#4682b4', 
+            '#b0c4de', '#dda0dd'
+        ]
+        
         canine_df = unique_demographics[unique_demographics["Species"].str.contains("Canine", case=False, na=False)]
         with pc1:
             if not canine_df.empty:
-                fig_canine = px.pie(canine_df, names='Breed', hole=0.4, title="<b>🐶 Canine Breeds</b>", template="simple_white")
+                fig_canine = px.pie(
+                    canine_df, 
+                    names='Breed', 
+                    hole=0.4, 
+                    title="<b>🐶 Canine Breeds</b>", 
+                    template="simple_white",
+                    color_discrete_sequence=breed_safe_colors # Injected custom palette
+                )
                 fig_canine.update_traces(textfont_size=18, hoverlabel=dict(font_size=16))
                 fig_canine.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_canine, use_container_width=True)
@@ -333,7 +343,14 @@ with tab2:
         feline_df = unique_demographics[unique_demographics["Species"].str.contains("Feline", case=False, na=False)]
         with pc2:
             if not feline_df.empty:
-                fig_feline = px.pie(feline_df, names='Breed', hole=0.4, title="<b>🐱 Feline Breeds</b>", template="simple_white", color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig_feline = px.pie(
+                    feline_df, 
+                    names='Breed', 
+                    hole=0.4, 
+                    title="<b>🐱 Feline Breeds</b>", 
+                    template="simple_white", 
+                    color_discrete_sequence=breed_safe_colors # Injected custom palette
+                )
                 fig_feline.update_traces(textfont_size=18, hoverlabel=dict(font_size=16))
                 fig_feline.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_feline, use_container_width=True)
