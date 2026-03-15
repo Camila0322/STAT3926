@@ -70,7 +70,6 @@ def clean_isolate_name(name):
     name = str(name)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
     name = " ".join(name.split()).capitalize()
     return name if name else "NA"
@@ -199,6 +198,7 @@ with tab2:
         df = st.session_state['processed_data'].copy()
         st.header("📊 Surveillance Insights")
         clean_species = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
+        
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Number of Isolates", len(clean_species))
         m2.metric("Unique Clinical Cases", clean_species["Lab Reference"].nunique())
@@ -215,14 +215,15 @@ with tab2:
             fig_species = go.Figure(data=[go.Bar(x=x_cats, y=y_vals, marker_color='#002b5c', hovertemplate="<b>Species:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>")])
             fig_species.update_layout(template="simple_white", xaxis_title="<b>Species Identified</b>", yaxis_title="<b>Total Number of Isolates</b>", font=dict(color="black", size=18))
             fig_species.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
-            fig_species.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y * 1.1], rangemode="tozero")
+            # HARD LOCK ON RANGE TO FIX GROUNDING
+            fig_species.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y * 1.1], fixedrange=True)
             st.plotly_chart(fig_species, use_container_width=True)
             
         with col_data:
             st.dataframe(pd.DataFrame({"Isolate": x_cats, "Count": y_vals}), use_container_width=True, hide_index=True)
             
         st.divider()
-        st.subheader("Global Resistance Profiles (100% Stacked)")
+        st.subheader("Global Resistance Profiles")
         sir_check = df.isin(['S', 'I', 'R']).any()
         actual_abx_cols = sir_check[sir_check == True].index.tolist()
         if actual_abx_cols:
@@ -230,22 +231,15 @@ with tab2:
             sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
             sir_melt['Result'] = sir_melt['Result'].map({'S': 'Sensitive', 'I': 'Intermediate', 'R': 'Resistant'})
             
-            # --- 100% STACKED BAR CHART ---
-            fig_sir = px.histogram(
-                sir_melt, 
-                x="Antibiotic", 
-                color="Result", 
-                barnorm="percent", # THIS FORCES 100% STACKING
-                color_discrete_map={'Sensitive': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
-                category_orders={"Result": ["Resistant", "Intermediate", "Sensitive"]}, 
-                template="simple_white"
-            )
-            
-            fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Proportion:</b> %{y:.1f}%<extra></extra>")
+            # GOING BACK TO DODGE (Grouped) PLOT
+            fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group", color_discrete_map={'Sensitive': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, category_orders={"Result": ["Resistant", "Intermediate", "Sensitive"]}, template="simple_white")
+            fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
             fig_sir.update_layout(xaxis_tickangle=-45, font=dict(color="black", size=18), legend=dict(font=dict(size=16), title_font_size=18))
             fig_sir.update_xaxes(title_text="<b>Antibiotic</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
-            fig_sir.update_yaxes(title_text="<b>Proportion (%)</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, 100], rangemode="tozero")
             
+            # CALCULATE MAX HISTOGRAM VALUE FOR HARD Y-AXIS LOCK
+            max_c = sir_melt.groupby(['Antibiotic', 'Result']).size().max() if not sir_melt.empty else 10
+            fig_sir.update_yaxes(title_text="<b>Count</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_c * 1.1], fixedrange=True)
             st.plotly_chart(fig_sir, use_container_width=True)
                 
         st.divider()
