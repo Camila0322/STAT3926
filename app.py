@@ -5,6 +5,7 @@ import pandas as pd
 import re
 import io
 import plotly.express as px
+import plotly.graph_objects as go # IMPORT ADDED FOR RAW GRAPH CONTROL
 from openpyxl.styles import PatternFill, Font
 
 # --- 1. SET PAGE CONFIG ---
@@ -222,41 +223,48 @@ with tab2:
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
+        # 1. EXTRACT DATA AS NATIVE PYTHON LISTS TO PREVENT PANDAS BUG
         counts = clean_species["Isolate"].value_counts()
+        x_categories = counts.index.tolist()
+        y_values = [int(v) for v in counts.values]
+        max_y = max(y_values) if y_values else 10
+        
         verification_df = pd.DataFrame({
-            "Bacterial Species": counts.index.astype(str),
-            "Total Number of Isolates": pd.to_numeric(counts.values) 
+            "Bacterial Species": x_categories,
+            "Total Number of Isolates": y_values 
         })
         
         with col_chart:
-            fig_species = px.bar(
-                verification_df, 
-                x="Bacterial Species", 
-                y="Total Number of Isolates", 
-                text="Total Number of Isolates", 
-                template="simple_white" 
-            )
-            fig_species.update_traces(textposition='outside', marker_color='#002b5c')
+            # 2. USE RAW PLOTLY GRAPH OBJECTS TO FORCE EXACT MAPPING
+            fig_species = go.Figure(data=[
+                go.Bar(
+                    x=x_categories,
+                    y=y_values,
+                    text=y_values,
+                    textposition='outside',
+                    marker_color='#002b5c',
+                    hovertemplate="<b>Species:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
+                )
+            ])
             
             fig_species.update_layout(
-                yaxis=dict(type='linear'),
-                xaxis=dict(categoryorder='total descending'),
-                font=dict(color="black")
+                template="simple_white",
+                xaxis_title="<b>Species Identified</b>",
+                yaxis_title="<b>Total Number of Isolates</b>",
+                font=dict(color="black", size=18)
             )
             
             fig_species.update_xaxes(
-                title_text="<b>Species Identified</b>",
                 title_font=dict(size=20, color="black"),
                 tickfont=dict(size=16, color="black"),
-                showline=True, linewidth=1, linecolor='black', mirror=False
+                showline=True, linewidth=2, linecolor='black', mirror=False
             )
             
             fig_species.update_yaxes(
-                title_text="<b>Total Number of Isolates</b>",
                 title_font=dict(size=20, color="black"),
                 tickfont=dict(size=16, color="black"),
-                showline=True, linewidth=1, linecolor='black', mirror=False,
-                rangemode="tozero" # Forces the bars to sit exactly on the axis
+                showline=True, linewidth=2, linecolor='black', mirror=False,
+                range=[0, max_y * 1.15] # 3. FORCE AXIS TO START EXACTLY AT 0
             )
             
             st.plotly_chart(fig_species, use_container_width=True)
@@ -292,7 +300,7 @@ with tab2:
             
             fig_sir.update_layout(
                 xaxis_tickangle=-45,
-                font=dict(color="black"),
+                font=dict(color="black", size=18),
                 legend=dict(font=dict(size=16), title_font_size=18)
             )
             
@@ -300,14 +308,17 @@ with tab2:
                 title_text="<b>Antibiotic</b>",
                 title_font=dict(size=20, color="black"),
                 tickfont=dict(size=16, color="black"),
-                showline=True, linewidth=1, linecolor='black', mirror=False
+                showline=True, linewidth=2, linecolor='black', mirror=False
             )
+            
+            # Extract max value from histogram to lock Y-axis to 0
+            max_count = sir_melt.groupby(['Antibiotic', 'Result']).size().max() if not sir_melt.empty else 10
             fig_sir.update_yaxes(
                 title_text="<b>Count</b>",
                 title_font=dict(size=20, color="black"),
                 tickfont=dict(size=16, color="black"),
-                showline=True, linewidth=1, linecolor='black', mirror=False,
-                rangemode="tozero" # Forces the bars to sit exactly on the axis
+                showline=True, linewidth=2, linecolor='black', mirror=False,
+                range=[0, max_count * 1.15] # FORCES AXIS TO START EXACTLY AT 0
             )
             
             st.plotly_chart(fig_sir, use_container_width=True)
@@ -318,7 +329,6 @@ with tab2:
         
         unique_demographics = df.drop_duplicates(subset=['Lab Reference'])
         
-        # --- CUSTOM COLOR PALETTE: No Red, Green, or Yellow ---
         breed_safe_colors = [
             '#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', 
             '#002b5c', '#6a5acd', '#008b8b', '#ff69b4', '#4682b4', 
