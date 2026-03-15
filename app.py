@@ -213,7 +213,7 @@ with tab2:
         clean_species = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Rows in Table", len(clean_species))
+        m1.metric("Total Isolates", len(clean_species))
         m2.metric("Unique Clinical Cases", clean_species["Lab Reference"].nunique())
         m3.metric("Unique Bacteria Types", clean_species["Isolate"].nunique())
         
@@ -236,15 +236,20 @@ with tab2:
                 text="Number of Isolates", 
                 template="simple_white" 
             )
-            fig_species.update_traces(textposition='outside', marker_color='#002b5c')
+            # Increase text size of data labels inside the chart
+            fig_species.update_traces(
+                textposition='outside', 
+                marker_color='#002b5c',
+                textfont_size=18,
+                hoverlabel=dict(font_size=16)
+            )
             
-            # --- BOLD AXIS LABELS & LARGER BASE FONT SIZE ---
             fig_species.update_layout(
                 yaxis=dict(type='linear'),
                 xaxis=dict(categoryorder='total descending'),
                 xaxis_title="<b>Species Identified</b>", 
                 yaxis_title="<b>Number of Isolates</b>",
-                font=dict(color="black", size=16) # Base size set to 16
+                font=dict(color="black", size=18) # Base size increased to 18
             )
             fig_species.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
             fig_species.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
@@ -277,14 +282,19 @@ with tab2:
                 template="simple_white"
             )
             
-            fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
+            # Increase hover tooltip font size and data label sizing
+            fig_sir.update_traces(
+                hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>",
+                hoverlabel=dict(font_size=16),
+                textfont_size=18
+            )
             
-            # --- BOLD AXIS LABELS & LARGER BASE FONT SIZE ---
             fig_sir.update_layout(
                 xaxis_tickangle=-45,
                 xaxis_title="<b>Antibiotic</b>",
                 yaxis_title="<b>Count</b>",
-                font=dict(color="black", size=16) # Base size set to 16
+                font=dict(color="black", size=18), # Base size increased to 18
+                legend=dict(font=dict(size=16), title_font_size=18) # Enlarge legend text
             )
             fig_sir.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
             fig_sir.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
@@ -300,7 +310,8 @@ with tab2:
         with pc1:
             if not canine_df.empty:
                 fig_canine = px.pie(canine_df, names='Breed', hole=0.4, title="<b>🐶 Canine Breeds</b>", template="simple_white")
-                fig_canine.update_layout(font=dict(color="black", size=16)) # Enlarged font for Pie
+                fig_canine.update_traces(textfont_size=18, hoverlabel=dict(font_size=16)) # Bigger pie text
+                fig_canine.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_canine, use_container_width=True)
             else:
                 st.info("No Canine data identified in this batch.")
@@ -309,7 +320,8 @@ with tab2:
         with pc2:
             if not feline_df.empty:
                 fig_feline = px.pie(feline_df, names='Breed', hole=0.4, title="<b>🐱 Feline Breeds</b>", template="simple_white", color_discrete_sequence=px.colors.qualitative.Pastel)
-                fig_feline.update_layout(font=dict(color="black", size=16)) # Enlarged font for Pie
+                fig_feline.update_traces(textfont_size=18, hoverlabel=dict(font_size=16)) # Bigger pie text
+                fig_feline.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_feline, use_container_width=True)
             else:
                 st.info("No Feline data identified in this batch.")
