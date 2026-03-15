@@ -221,7 +221,6 @@ with tab2:
         max_y = max(y_vals) if y_vals else 10
         
         with col_chart:
-            # Replaced px.bar with raw go.Bar to permanently fix hover %{text} bug
             fig_species = go.Figure(data=[
                 go.Bar(
                     x=x_cats,
@@ -236,17 +235,15 @@ with tab2:
                 xaxis_title="<b>Species Identified</b>",
                 yaxis_title="<b>Total Number of Isolates</b>",
                 font=dict(color="black", size=18),
-                # Massively increased bottom margin to ensure caption clears X-Axis title
                 margin=dict(b=220, t=50, l=0, r=0)
             )
             fig_species.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
             fig_species.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y * 1.1], rangemode="tozero")
             
-            # Pushed caption much lower to sit strictly underneath the "Species Identified" axis title
             fig_species.add_annotation(
                 text="Figure 1: Distribution of bacterial species identified across all processed clinical reports.",
                 xref="paper", yref="paper", 
-                x=0, y=-0.6, 
+                x=0, y=-0.55, 
                 showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
@@ -262,12 +259,15 @@ with tab2:
         if sir_cols:
             melted = df[sir_cols].melt(var_name="ABx", value_name="Res")
             melted = melted[melted["Res"].isin(["S", "I", "R"])]
-            melted['Res'] = melted['Res'].map({'S': 'Sensitive', 'I': 'Intermediate', 'R': 'Resistant'})
+            
+            # --- RENAMED SENSITIVE TO SUSCEPTIBLE ---
+            melted['Res'] = melted['Res'].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
             
             fig_sir = px.histogram(
                 melted, x="ABx", color="Res", barmode="group", 
-                color_discrete_map={'Sensitive': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
-                category_orders={"Res": ["Resistant", "Intermediate", "Sensitive"]}, 
+                # --- UPDATED COLOR MAP AND CATEGORY ORDER ---
+                color_discrete_map={'Susceptible': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
+                category_orders={"Res": ["Resistant", "Intermediate", "Susceptible"]}, 
                 template="simple_white"
             )
             
@@ -278,9 +278,9 @@ with tab2:
                 font=dict(color="black", size=18), 
                 legend=dict(
                     font=dict(size=16), 
-                    title=dict(text="<b>Sensitivity</b>", font=dict(size=22))
+                    # --- UPDATED LEGEND TITLE ---
+                    title=dict(text="<b>Susceptibility</b>", font=dict(size=22))
                 ),
-                # Massively increased bottom margin to clear rotated labels AND the axis title
                 margin=dict(b=260, t=50, l=0, r=0)
             )
             fig_sir.update_xaxes(title_text="<b>Antibiotic</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
@@ -288,11 +288,11 @@ with tab2:
             max_c = melted.groupby(['ABx', 'Res']).size().max() if not melted.empty else 10
             fig_sir.update_yaxes(title_text="<b>Count</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_c * 1.1], rangemode="tozero")
             
-            # Pushed caption much lower to sit strictly underneath the "Antibiotic" axis title
+            # --- UPDATED FIGURE CAPTION ---
             fig_sir.add_annotation(
-                text="Figure 2: Overall antimicrobial susceptibility profiles (Green: Sensitive, Yellow: Intermediate, Red: Resistant).",
+                text="Figure 2: Overall antimicrobial susceptibility profiles (Green: Susceptible, Yellow: Intermediate, Red: Resistant).",
                 xref="paper", yref="paper", 
-                x=0, y=-0.8, 
+                x=0, y=-0.75, 
                 showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
@@ -311,11 +311,9 @@ with tab2:
                 fig_c.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_c.update_layout(
                     font=dict(color="black", size=18),
-                    # Pie charts don't have axis titles, so margin is slightly smaller but still spacious
                     margin=dict(b=140, t=50, l=0, r=0)
                 )
                 
-                # Figure 3a Caption
                 fig_c.add_annotation(
                     text="Figure 3(a): Demographic distribution of canine breeds per unique clinical case.",
                     xref="paper", yref="paper", 
@@ -336,7 +334,6 @@ with tab2:
                     margin=dict(b=140, t=50, l=0, r=0)
                 )
                 
-                # Figure 3b Caption
                 fig_f.add_annotation(
                     text="Figure 3b: Demographic distribution of feline breeds<br>per unique clinical case.",
                     xref="paper", yref="paper", 
