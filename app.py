@@ -213,7 +213,8 @@ with tab2:
         clean_species = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Isolates", len(clean_species))
+        # Updated Metric Title
+        m1.metric("Total Number of Isolates", len(clean_species))
         m2.metric("Unique Clinical Cases", clean_species["Lab Reference"].nunique())
         m3.metric("Unique Bacteria Types", clean_species["Isolate"].nunique())
         
@@ -225,34 +226,41 @@ with tab2:
         counts = clean_species["Isolate"].value_counts()
         verification_df = pd.DataFrame({
             "Bacterial Species": counts.index.astype(str),
-            "Number of Isolates": pd.to_numeric(counts.values) 
+            "Total Number of Isolates": pd.to_numeric(counts.values) 
         })
         
         with col_chart:
             fig_species = px.bar(
                 verification_df, 
                 x="Bacterial Species", 
-                y="Number of Isolates", 
-                text="Number of Isolates", 
+                y="Total Number of Isolates", 
+                text="Total Number of Isolates", 
                 template="simple_white" 
             )
-            # Increase text size of data labels inside the chart
-            fig_species.update_traces(
-                textposition='outside', 
-                marker_color='#002b5c',
-                textfont_size=18,
-                hoverlabel=dict(font_size=16)
-            )
+            fig_species.update_traces(textposition='outside', marker_color='#002b5c')
             
+            # --- EXPLICIT SIZING FOR TICKS AND AXIS LABELS ---
             fig_species.update_layout(
                 yaxis=dict(type='linear'),
                 xaxis=dict(categoryorder='total descending'),
-                xaxis_title="<b>Species Identified</b>", 
-                yaxis_title="<b>Number of Isolates</b>",
-                font=dict(color="black", size=18) # Base size increased to 18
+                font=dict(color="black")
             )
-            fig_species.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
-            fig_species.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
+            
+            # Update X axis titles and ticks
+            fig_species.update_xaxes(
+                title_text="<b>Species Identified</b>",
+                title_font=dict(size=20, color="black"),
+                tickfont=dict(size=16, color="black"),
+                showline=True, linewidth=1, linecolor='black', mirror=False
+            )
+            
+            # Update Y axis titles and ticks
+            fig_species.update_yaxes(
+                title_text="<b>Total Number of Isolates</b>",
+                title_font=dict(size=20, color="black"),
+                tickfont=dict(size=16, color="black"),
+                showline=True, linewidth=1, linecolor='black', mirror=False
+            )
             
             st.plotly_chart(fig_species, use_container_width=True)
             
@@ -282,22 +290,28 @@ with tab2:
                 template="simple_white"
             )
             
-            # Increase hover tooltip font size and data label sizing
-            fig_sir.update_traces(
-                hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>",
-                hoverlabel=dict(font_size=16),
-                textfont_size=18
-            )
+            fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
             
             fig_sir.update_layout(
                 xaxis_tickangle=-45,
-                xaxis_title="<b>Antibiotic</b>",
-                yaxis_title="<b>Count</b>",
-                font=dict(color="black", size=18), # Base size increased to 18
-                legend=dict(font=dict(size=16), title_font_size=18) # Enlarge legend text
+                font=dict(color="black"),
+                legend=dict(font=dict(size=16), title_font_size=18)
             )
-            fig_sir.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
-            fig_sir.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
+            
+            # --- EXPLICIT SIZING FOR TICKS AND AXIS LABELS ---
+            fig_sir.update_xaxes(
+                title_text="<b>Antibiotic</b>",
+                title_font=dict(size=20, color="black"),
+                tickfont=dict(size=16, color="black"),
+                showline=True, linewidth=1, linecolor='black', mirror=False
+            )
+            fig_sir.update_yaxes(
+                title_text="<b>Count</b>",
+                title_font=dict(size=20, color="black"),
+                tickfont=dict(size=16, color="black"),
+                showline=True, linewidth=1, linecolor='black', mirror=False
+            )
+            
             st.plotly_chart(fig_sir, use_container_width=True)
                 
         st.divider()
@@ -310,7 +324,7 @@ with tab2:
         with pc1:
             if not canine_df.empty:
                 fig_canine = px.pie(canine_df, names='Breed', hole=0.4, title="<b>🐶 Canine Breeds</b>", template="simple_white")
-                fig_canine.update_traces(textfont_size=18, hoverlabel=dict(font_size=16)) # Bigger pie text
+                fig_canine.update_traces(textfont_size=18, hoverlabel=dict(font_size=16))
                 fig_canine.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_canine, use_container_width=True)
             else:
@@ -320,7 +334,7 @@ with tab2:
         with pc2:
             if not feline_df.empty:
                 fig_feline = px.pie(feline_df, names='Breed', hole=0.4, title="<b>🐱 Feline Breeds</b>", template="simple_white", color_discrete_sequence=px.colors.qualitative.Pastel)
-                fig_feline.update_traces(textfont_size=18, hoverlabel=dict(font_size=16)) # Bigger pie text
+                fig_feline.update_traces(textfont_size=18, hoverlabel=dict(font_size=16))
                 fig_feline.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_feline, use_container_width=True)
             else:
