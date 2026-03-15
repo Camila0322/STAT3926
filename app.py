@@ -245,7 +245,7 @@ with tab2:
             fig_species.add_annotation(
                 text="Figure 1: Distribution of bacterial species identified across all processed clinical reports.",
                 xref="paper", yref="paper", 
-                x=0, y=-0.7, 
+                x=0, y=-1, 
                 showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
@@ -290,7 +290,7 @@ with tab2:
             fig_sir.add_annotation(
                 text="Figure 2: Overall antimicrobial susceptibility profiles (Green: Sensitive, Yellow: Intermediate, Red: Resistant).",
                 xref="paper", yref="paper", 
-                x=0, y=-0.85, 
+                x=0, y=-1, 
                 showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
@@ -315,9 +315,9 @@ with tab2:
                 
                 # Figure 3a Caption
                 fig_c.add_annotation(
-                    text="Figure 3a: Demographic distribution of canine breeds<br>per unique clinical case.",
+                    text="Figure 3(a): Demographic distribution of canine breeds<br>per unique clinical case.",
                     xref="paper", yref="paper", 
-                    x=0.5, y=-0.4, 
+                    x=0.5, y=-0.2, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
                 )
                 
