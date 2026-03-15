@@ -234,12 +234,11 @@ with tab2:
         })
         
         with col_chart:
+            # TEXT PARAMETERS REMOVED FROM BARS
             fig_species = go.Figure(data=[
                 go.Bar(
                     x=x_categories,
                     y=y_values,
-                    text=y_values,
-                    textposition='outside',
                     marker_color='#002b5c',
                     hovertemplate="<b>Species:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
                 )
@@ -321,8 +320,6 @@ with tab2:
             st.plotly_chart(fig_sir, use_container_width=True)
                 
         st.divider()
-        
-        # --- TITLE UPDATED ---
         st.subheader("Species-Specific Breed Prevalence")
         pc1, pc2 = st.columns(2)
         
@@ -345,14 +342,11 @@ with tab2:
                     template="simple_white",
                     color_discrete_sequence=breed_safe_colors
                 )
-                
-                # --- HOVER TEMPLATE OVERRIDE ---
                 fig_canine.update_traces(
                     hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>",
                     textfont_size=18, 
                     hoverlabel=dict(font_size=16)
                 )
-                
                 fig_canine.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_canine, use_container_width=True)
             else:
@@ -369,14 +363,11 @@ with tab2:
                     template="simple_white", 
                     color_discrete_sequence=breed_safe_colors 
                 )
-                
-                # --- HOVER TEMPLATE OVERRIDE ---
                 fig_feline.update_traces(
                     hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>",
                     textfont_size=18, 
                     hoverlabel=dict(font_size=16)
                 )
-                
                 fig_feline.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_feline, use_container_width=True)
             else:
