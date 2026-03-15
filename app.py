@@ -213,7 +213,7 @@ with tab2:
         clean_species = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Rows in Table", len(clean_species))
+        m1.metric("Total Isolates", len(clean_species))
         m2.metric("Unique Clinical Cases", clean_species["Lab Reference"].nunique())
         m3.metric("Unique Bacteria Types", clean_species["Isolate"].nunique())
         
@@ -222,15 +222,13 @@ with tab2:
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
-        # FORCE STRICT TYPES FOR PLOTLY
         counts = clean_species["Isolate"].value_counts()
         verification_df = pd.DataFrame({
             "Bacterial Species": counts.index.astype(str),
-            "Count": counts.values.astype(int) # Forces the numbers to be integers, not index labels
+            "Count": counts.values.astype(int) 
         })
         
         with col_chart:
-            # RESTORED PLOTLY FIX
             fig_species = px.bar(
                 verification_df, 
                 x="Bacterial Species", 
@@ -239,13 +237,11 @@ with tab2:
                 template="plotly_white"
             )
             fig_species.update_traces(textposition='outside', marker_color='#002b5c')
-            
-            # Lock the Y-axis to mathematical scaling so Plotly cannot index it alphabetically
             fig_species.update_layout(
-                yaxis=dict(type='linear'),
-                xaxis=dict(categoryorder='total descending'),
+                yaxis=dict(type='linear'), 
+                xaxis=dict(categoryorder='total descending'), 
                 xaxis_title="Species Identified", 
-                yaxis_title="Total Rows in Dataset"
+                yaxis_title="Number of Isolates"
             )
             st.plotly_chart(fig_species, use_container_width=True)
             
@@ -262,22 +258,35 @@ with tab2:
         if actual_abx_cols:
             sir_melt = df[actual_abx_cols].melt(var_name="Antibiotic", value_name="Result")
             sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
+            
             fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group", color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
+            
+            # --- HOVER TEMPLATE OVERRIDE ---
+            fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
+            
             fig_sir.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig_sir, use_container_width=True)
                 
         st.divider()
-        st.subheader("Species-Specific Breed Prevalence")
+        
+        # --- SIDE BY SIDE BREED CHARTS ---
+        st.subheader("Species-Specific Breed Prevalence (1 Per Case)")
         pc1, pc2 = st.columns(2)
         
-        canine_df = df[df["Species"].str.contains("Canine", case=False, na=False)]
+        unique_demographics = df.drop_duplicates(subset=['Lab Reference'])
+        
+        canine_df = unique_demographics[unique_demographics["Species"].str.contains("Canine", case=False, na=False)]
         with pc1:
             if not canine_df.empty:
                 st.plotly_chart(px.pie(canine_df, names='Breed', hole=0.4, title="🐶 Canine Breeds", template="plotly_white"), use_container_width=True)
+            else:
+                st.info("No Canine data identified in this batch.")
 
-        feline_df = df[df["Species"].str.contains("Feline", case=False, na=False)]
+        feline_df = unique_demographics[unique_demographics["Species"].str.contains("Feline", case=False, na=False)]
         with pc2:
             if not feline_df.empty:
                 st.plotly_chart(px.pie(feline_df, names='Breed', hole=0.4, title="🐱 Feline Breeds", template="plotly_white", color_discrete_sequence=px.colors.qualitative.Pastel), use_container_width=True)
+            else:
+                st.info("No Feline data identified in this batch.")
     else:
         st.info("💡 Process data in the first tab to unlock analytics.")
