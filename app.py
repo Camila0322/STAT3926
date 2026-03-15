@@ -107,7 +107,6 @@ def parse_pdf_report(file_object):
             if sample_site_val and sample_site_val != "NA":
                 sample_site_val = sample_site_val[0].upper() + sample_site_val[1:]
 
-            # 1. FIND ALL IDENTIFIED ISOLATES (INCLUDING CHERRY'S LIST)
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
@@ -116,7 +115,6 @@ def parse_pdf_report(file_object):
             unique_ids = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
             all_identified_isolates.extend([clean_isolate_name(i) for i in unique_ids])
 
-            # 2. CHECK WHICH ONES HAVE TABLES
             for i, isolate_species in enumerate(unique_ids):
                 iso_clean = clean_isolate_name(isolate_species)
                 start_idx = block.find(isolate_species)
@@ -135,7 +133,6 @@ def parse_pdf_report(file_object):
                 
                 if has_sir: extracted_data.append(record)
 
-    # 3. COMPARE IDENTIFIED VS PROCESSED TO FIND SKIPS
     processed_isolates = [r["Isolate"] for r in extracted_data]
     skipped_list = [iso for iso in list(set(all_identified_isolates)) if iso not in processed_isolates]
     
@@ -212,31 +209,43 @@ with tab2:
         col_chart, col_data = st.columns([2, 1])
         counts = clean_species["Isolate"].value_counts()
         x_cats, y_vals = counts.index.tolist(), [int(v) for v in counts.values]
+        max_y = max(y_vals) if y_vals else 10
         
         with col_chart:
-            fig_species = go.Figure(data=[go.Bar(x=x_cats, y=y_vals, marker_color='#002b5c', hovertemplate="<b>Species Identified:</b> %{x}<br><b>Number of Isolates:</b> %{y}<extra></extra>")])
+            fig_species = go.Figure(data=[go.Bar(x=x_cats, y=y_vals, marker_color='#002b5c', hovertemplate="<b>Species:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>")])
             fig_species.update_layout(template="simple_white", xaxis_title="<b>Species Identified</b>", yaxis_title="<b>Total Number of Isolates</b>", font=dict(color="black", size=18))
             fig_species.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
-            fig_species.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max(y_vals)*1.15 if y_vals else 10])
+            fig_species.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y * 1.1], rangemode="tozero")
             st.plotly_chart(fig_species, use_container_width=True)
             
         with col_data:
             st.dataframe(pd.DataFrame({"Isolate": x_cats, "Count": y_vals}), use_container_width=True, hide_index=True)
             
         st.divider()
-        st.subheader("Global Resistance Profiles")
+        st.subheader("Global Resistance Profiles (100% Stacked)")
         sir_check = df.isin(['S', 'I', 'R']).any()
         actual_abx_cols = sir_check[sir_check == True].index.tolist()
         if actual_abx_cols:
             sir_melt = df[actual_abx_cols].melt(var_name="Antibiotic", value_name="Result")
             sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
             sir_melt['Result'] = sir_melt['Result'].map({'S': 'Sensitive', 'I': 'Intermediate', 'R': 'Resistant'})
-            fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group", color_discrete_map={'Sensitive': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, category_orders={"Result": ["Resistant", "Intermediate", "Sensitive"]}, template="simple_white")
-            fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
+            
+            # --- 100% STACKED BAR CHART ---
+            fig_sir = px.histogram(
+                sir_melt, 
+                x="Antibiotic", 
+                color="Result", 
+                barnorm="percent", # THIS FORCES 100% STACKING
+                color_discrete_map={'Sensitive': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
+                category_orders={"Result": ["Resistant", "Intermediate", "Sensitive"]}, 
+                template="simple_white"
+            )
+            
+            fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Proportion:</b> %{y:.1f}%<extra></extra>")
             fig_sir.update_layout(xaxis_tickangle=-45, font=dict(color="black", size=18), legend=dict(font=dict(size=16), title_font_size=18))
             fig_sir.update_xaxes(title_text="<b>Antibiotic</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
-            max_c = sir_melt.groupby(['Antibiotic', 'Result']).size().max() if not sir_melt.empty else 10
-            fig_sir.update_yaxes(title_text="<b>Count</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_c*1.15])
+            fig_sir.update_yaxes(title_text="<b>Proportion (%)</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, 100], rangemode="tozero")
+            
             st.plotly_chart(fig_sir, use_container_width=True)
                 
         st.divider()
