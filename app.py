@@ -234,13 +234,19 @@ with tab2:
                 xaxis_title="<b>Species Identified</b>",
                 yaxis_title="<b>Total Number of Isolates</b>",
                 font=dict(color="black", size=18),
-                margin=dict(b=0, t=50, l=0, r=0)
+                margin=dict(b=80, t=50, l=0, r=0) 
             )
             fig_species.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
             fig_species.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y * 1.1], rangemode="tozero")
+            
+            # Embedded Figure Caption
+            fig_species.add_annotation(
+                text="Figure 1: Distribution of bacterial species identified across all processed clinical reports.",
+                xref="paper", yref="paper", x=0, y=-0.35, showarrow=False,
+                font=dict(size=14, color="gray"), align="left"
+            )
+            
             st.plotly_chart(fig_species, use_container_width=True)
-            # FIGURE CAPTION
-            st.caption("Figure 1: Distribution of bacterial species identified across all processed clinical reports.")
             
         with col_data:
             st.markdown("**Data Verification Table**")
@@ -265,20 +271,25 @@ with tab2:
             fig_sir.update_layout(
                 xaxis_tickangle=-45, 
                 font=dict(color="black", size=18), 
-                # INCREASED LEGEND TITLE FONT SIZE
                 legend=dict(
                     font=dict(size=16), 
                     title=dict(text="<b>Sensitivity</b>", font=dict(size=22))
                 ),
-                margin=dict(b=0, t=50, l=0, r=0)
+                margin=dict(b=80, t=50, l=0, r=0)
             )
             fig_sir.update_xaxes(title_text="<b>Antibiotic</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
             
             max_c = melted.groupby(['ABx', 'Res']).size().max() if not melted.empty else 10
             fig_sir.update_yaxes(title_text="<b>Count</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_c * 1.1], rangemode="tozero")
+            
+            # Embedded Figure Caption with color explanation
+            fig_sir.add_annotation(
+                text="Figure 2: Overall antimicrobial susceptibility profiles (Green: Sensitive, Yellow: Intermediate, Red: Resistant).",
+                xref="paper", yref="paper", x=0, y=-0.50, showarrow=False,
+                font=dict(size=14, color="gray"), align="left"
+            )
+            
             st.plotly_chart(fig_sir, use_container_width=True)
-            # FIGURE CAPTION
-            st.caption("Figure 2: Overall antimicrobial susceptibility profiles (Sensitive, Intermediate, Resistant) across all tested isolates.")
                 
         st.divider()
         st.subheader("Species-Specific Breed Prevalence")
@@ -291,10 +302,19 @@ with tab2:
             if not canine_df.empty:
                 fig_c = px.pie(canine_df, names='Breed', hole=0.4, title="<b>🐶 Canine Breeds</b>", template="simple_white", color_discrete_sequence=breed_pal)
                 fig_c.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
-                fig_c.update_layout(font=dict(color="black", size=18))
+                fig_c.update_layout(
+                    font=dict(color="black", size=18),
+                    margin=dict(b=60)
+                )
+                
+                # Embedded Figure Caption
+                fig_c.add_annotation(
+                    text="Figure 3a: Demographic distribution of canine breeds per unique clinical case.",
+                    xref="paper", yref="paper", x=0.5, y=-0.15, showarrow=False,
+                    font=dict(size=14, color="gray"), align="center"
+                )
+                
                 st.plotly_chart(fig_c, use_container_width=True)
-                # FIGURE CAPTION
-                st.caption("Figure 3a: Demographic distribution of canine breeds per unique clinical case.")
             else: st.info("No Canine data identified.")
 
         feline_df = unique_demo[unique_demo["Species"].str.contains("Feline", case=False, na=False)]
@@ -302,10 +322,19 @@ with tab2:
             if not feline_df.empty:
                 fig_f = px.pie(feline_df, names='Breed', hole=0.4, title="<b>🐱 Feline Breeds</b>", template="simple_white", color_discrete_sequence=breed_pal)
                 fig_f.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
-                fig_f.update_layout(font=dict(color="black", size=18))
+                fig_f.update_layout(
+                    font=dict(color="black", size=18),
+                    margin=dict(b=60)
+                )
+                
+                # Embedded Figure Caption
+                fig_f.add_annotation(
+                    text="Figure 3b: Demographic distribution of feline breeds per unique clinical case.",
+                    xref="paper", yref="paper", x=0.5, y=-0.15, showarrow=False,
+                    font=dict(size=14, color="gray"), align="center"
+                )
+                
                 st.plotly_chart(fig_f, use_container_width=True)
-                # FIGURE CAPTION
-                st.caption("Figure 3b: Demographic distribution of feline breeds per unique clinical case.")
             else: st.info("No Feline data identified.")
     else:
         st.info("💡 Process data in tab 1 to unlock analytics.")
