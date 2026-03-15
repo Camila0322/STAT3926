@@ -259,17 +259,27 @@ with tab2:
             sir_melt = df[actual_abx_cols].melt(var_name="Antibiotic", value_name="Result")
             sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
             
-            fig_sir = px.histogram(sir_melt, x="Antibiotic", color="Result", barmode="group", color_discrete_map={'S': '#2ca02c', 'I': '#ffcc00', 'R': '#d62728'}, template="plotly_white")
+            # --- FULL WORD MAPPING ---
+            result_mapping = {'S': 'Sensitive', 'I': 'Intermediate', 'R': 'Resistant'}
+            sir_melt['Result'] = sir_melt['Result'].map(result_mapping)
             
-            # --- HOVER TEMPLATE OVERRIDE ---
+            # Updated color map to match the new mapped values
+            fig_sir = px.histogram(
+                sir_melt, 
+                x="Antibiotic", 
+                color="Result", 
+                barmode="group", 
+                color_discrete_map={'Sensitive': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
+                template="plotly_white"
+            )
+            
+            # Custom hover formatting
             fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
-            
             fig_sir.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig_sir, use_container_width=True)
                 
         st.divider()
         
-        # --- SIDE BY SIDE BREED CHARTS ---
         st.subheader("Species-Specific Breed Prevalence (1 Per Case)")
         pc1, pc2 = st.columns(2)
         
