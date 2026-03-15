@@ -255,7 +255,8 @@ with tab2:
                 title_text="<b>Total Number of Isolates</b>",
                 title_font=dict(size=20, color="black"),
                 tickfont=dict(size=16, color="black"),
-                showline=True, linewidth=1, linecolor='black', mirror=False
+                showline=True, linewidth=1, linecolor='black', mirror=False,
+                rangemode="tozero" # Forces the bars to sit exactly on the axis
             )
             
             st.plotly_chart(fig_species, use_container_width=True)
@@ -305,7 +306,8 @@ with tab2:
                 title_text="<b>Count</b>",
                 title_font=dict(size=20, color="black"),
                 tickfont=dict(size=16, color="black"),
-                showline=True, linewidth=1, linecolor='black', mirror=False
+                showline=True, linewidth=1, linecolor='black', mirror=False,
+                rangemode="tozero" # Forces the bars to sit exactly on the axis
             )
             
             st.plotly_chart(fig_sir, use_container_width=True)
@@ -332,7 +334,7 @@ with tab2:
                     hole=0.4, 
                     title="<b>🐶 Canine Breeds</b>", 
                     template="simple_white",
-                    color_discrete_sequence=breed_safe_colors # Injected custom palette
+                    color_discrete_sequence=breed_safe_colors
                 )
                 fig_canine.update_traces(textfont_size=18, hoverlabel=dict(font_size=16))
                 fig_canine.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
@@ -349,7 +351,7 @@ with tab2:
                     hole=0.4, 
                     title="<b>🐱 Feline Breeds</b>", 
                     template="simple_white", 
-                    color_discrete_sequence=breed_safe_colors # Injected custom palette
+                    color_discrete_sequence=breed_safe_colors 
                 )
                 fig_feline.update_traces(textfont_size=18, hoverlabel=dict(font_size=16))
                 fig_feline.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
