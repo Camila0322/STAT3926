@@ -221,6 +221,7 @@ with tab2:
         max_y = max(y_vals) if y_vals else 10
         
         with col_chart:
+            # Strictly using graph_objects to kill the hover bug completely
             fig_species = go.Figure(data=[
                 go.Bar(
                     x=x_cats,
@@ -234,16 +235,18 @@ with tab2:
                 xaxis_title="<b>Species Identified</b>",
                 yaxis_title="<b>Total Number of Isolates</b>",
                 font=dict(color="black", size=18),
-                margin=dict(b=80, t=50, l=0, r=0) 
+                # Increased bottom margin significantly to fit title AND caption
+                margin=dict(b=130, t=50, l=0, r=0)
             )
             fig_species.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
             fig_species.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y * 1.1], rangemode="tozero")
             
-            # Embedded Figure Caption
+            # Embedded Figure Caption (Underneath axis title)
             fig_species.add_annotation(
                 text="Figure 1: Distribution of bacterial species identified across all processed clinical reports.",
-                xref="paper", yref="paper", x=0, y=-0.35, showarrow=False,
-                font=dict(size=14, color="gray"), align="left"
+                xref="paper", yref="paper", 
+                x=0, y=-0.35, 
+                showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
             st.plotly_chart(fig_species, use_container_width=True)
@@ -275,18 +278,20 @@ with tab2:
                     font=dict(size=16), 
                     title=dict(text="<b>Sensitivity</b>", font=dict(size=22))
                 ),
-                margin=dict(b=80, t=50, l=0, r=0)
+                # Massive bottom margin to clear the 45-degree axis labels
+                margin=dict(b=220, t=50, l=0, r=0)
             )
             fig_sir.update_xaxes(title_text="<b>Antibiotic</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
             
             max_c = melted.groupby(['ABx', 'Res']).size().max() if not melted.empty else 10
             fig_sir.update_yaxes(title_text="<b>Count</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_c * 1.1], rangemode="tozero")
             
-            # Embedded Figure Caption with color explanation
+            # Embedded Figure Caption (Pushed far down to clear labels)
             fig_sir.add_annotation(
                 text="Figure 2: Overall antimicrobial susceptibility profiles (Green: Sensitive, Yellow: Intermediate, Red: Resistant).",
-                xref="paper", yref="paper", x=0, y=-0.50, showarrow=False,
-                font=dict(size=14, color="gray"), align="left"
+                xref="paper", yref="paper", 
+                x=0, y=-0.65, 
+                showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
             st.plotly_chart(fig_sir, use_container_width=True)
@@ -304,14 +309,16 @@ with tab2:
                 fig_c.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_c.update_layout(
                     font=dict(color="black", size=18),
-                    margin=dict(b=60)
+                    # Pie charts don't have axis titles, so we just add margin at the bottom
+                    margin=dict(b=100, t=50, l=0, r=0)
                 )
                 
-                # Embedded Figure Caption
+                # Embedded Figure Caption 3a
                 fig_c.add_annotation(
-                    text="Figure 3a: Demographic distribution of canine breeds per unique clinical case.",
-                    xref="paper", yref="paper", x=0.5, y=-0.15, showarrow=False,
-                    font=dict(size=14, color="gray"), align="center"
+                    text="Figure 3a: Demographic distribution of canine breeds<br>per unique clinical case.",
+                    xref="paper", yref="paper", 
+                    x=0.5, y=-0.25, 
+                    showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
                 )
                 
                 st.plotly_chart(fig_c, use_container_width=True)
@@ -324,14 +331,15 @@ with tab2:
                 fig_f.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_f.update_layout(
                     font=dict(color="black", size=18),
-                    margin=dict(b=60)
+                    margin=dict(b=100, t=50, l=0, r=0)
                 )
                 
-                # Embedded Figure Caption
+                # Embedded Figure Caption 3b
                 fig_f.add_annotation(
-                    text="Figure 3b: Demographic distribution of feline breeds per unique clinical case.",
-                    xref="paper", yref="paper", x=0.5, y=-0.15, showarrow=False,
-                    font=dict(size=14, color="gray"), align="center"
+                    text="Figure 3b: Demographic distribution of feline breeds<br>per unique clinical case.",
+                    xref="paper", yref="paper", 
+                    x=0.5, y=-0.25, 
+                    showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
                 )
                 
                 st.plotly_chart(fig_f, use_container_width=True)
