@@ -222,27 +222,35 @@ with tab2:
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
+        # EXPLICIT NUMERIC CASTING TO PREVENT INDEX PLOTTING
         counts = clean_species["Isolate"].value_counts()
         verification_df = pd.DataFrame({
             "Bacterial Species": counts.index.astype(str),
-            "Count": counts.values.astype(int) 
+            "Number of Isolates": pd.to_numeric(counts.values) 
         })
         
         with col_chart:
+            # Replicating ggplot2's theme_classic() in Plotly
             fig_species = px.bar(
                 verification_df, 
                 x="Bacterial Species", 
-                y="Count", 
-                text="Count", 
-                template="plotly_white"
+                y="Number of Isolates", 
+                text="Number of Isolates", 
+                template="simple_white" # Strips gridlines and backgrounds
             )
             fig_species.update_traces(textposition='outside', marker_color='#002b5c')
+            
+            # Enforce solid black axis lines and strictly linear y-axis
             fig_species.update_layout(
-                yaxis=dict(type='linear'), 
-                xaxis=dict(categoryorder='total descending'), 
+                yaxis=dict(type='linear'),
+                xaxis=dict(categoryorder='total descending'),
                 xaxis_title="Species Identified", 
-                yaxis_title="Number of Isolates"
+                yaxis_title="Number of Isolates",
+                font=dict(color="black")
             )
+            fig_species.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
+            fig_species.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
+            
             st.plotly_chart(fig_species, use_container_width=True)
             
         with col_data:
@@ -259,27 +267,29 @@ with tab2:
             sir_melt = df[actual_abx_cols].melt(var_name="Antibiotic", value_name="Result")
             sir_melt = sir_melt[sir_melt["Result"].isin(["S", "I", "R"])]
             
-            # --- FULL WORD MAPPING ---
             result_mapping = {'S': 'Sensitive', 'I': 'Intermediate', 'R': 'Resistant'}
             sir_melt['Result'] = sir_melt['Result'].map(result_mapping)
             
-            # Updated color map to match the new mapped values
+            # Applying theme_classic() aesthetic here too
             fig_sir = px.histogram(
                 sir_melt, 
                 x="Antibiotic", 
                 color="Result", 
                 barmode="group", 
                 color_discrete_map={'Sensitive': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
-                template="plotly_white"
+                template="simple_white"
             )
             
-            # Custom hover formatting
             fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
-            fig_sir.update_layout(xaxis_tickangle=-45)
+            fig_sir.update_layout(
+                xaxis_tickangle=-45,
+                font=dict(color="black")
+            )
+            fig_sir.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
+            fig_sir.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=False)
             st.plotly_chart(fig_sir, use_container_width=True)
                 
         st.divider()
-        
         st.subheader("Species-Specific Breed Prevalence (1 Per Case)")
         pc1, pc2 = st.columns(2)
         
@@ -288,14 +298,16 @@ with tab2:
         canine_df = unique_demographics[unique_demographics["Species"].str.contains("Canine", case=False, na=False)]
         with pc1:
             if not canine_df.empty:
-                st.plotly_chart(px.pie(canine_df, names='Breed', hole=0.4, title="🐶 Canine Breeds", template="plotly_white"), use_container_width=True)
+                fig_canine = px.pie(canine_df, names='Breed', hole=0.4, title="🐶 Canine Breeds", template="simple_white")
+                st.plotly_chart(fig_canine, use_container_width=True)
             else:
                 st.info("No Canine data identified in this batch.")
 
         feline_df = unique_demographics[unique_demographics["Species"].str.contains("Feline", case=False, na=False)]
         with pc2:
             if not feline_df.empty:
-                st.plotly_chart(px.pie(feline_df, names='Breed', hole=0.4, title="🐱 Feline Breeds", template="plotly_white", color_discrete_sequence=px.colors.qualitative.Pastel), use_container_width=True)
+                fig_feline = px.pie(feline_df, names='Breed', hole=0.4, title="🐱 Feline Breeds", template="simple_white", color_discrete_sequence=px.colors.qualitative.Pastel)
+                st.plotly_chart(fig_feline, use_container_width=True)
             else:
                 st.info("No Feline data identified in this batch.")
     else:
