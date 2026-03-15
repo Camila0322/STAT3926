@@ -5,7 +5,7 @@ import pandas as pd
 import re
 import io
 import plotly.express as px
-import plotly.graph_objects as go # IMPORT ADDED FOR RAW GRAPH CONTROL
+import plotly.graph_objects as go
 from openpyxl.styles import PatternFill, Font
 
 # --- 1. SET PAGE CONFIG ---
@@ -223,7 +223,6 @@ with tab2:
         st.subheader("Bacterial Species Distribution")
         col_chart, col_data = st.columns([2, 1])
         
-        # 1. EXTRACT DATA AS NATIVE PYTHON LISTS TO PREVENT PANDAS BUG
         counts = clean_species["Isolate"].value_counts()
         x_categories = counts.index.tolist()
         y_values = [int(v) for v in counts.values]
@@ -235,7 +234,6 @@ with tab2:
         })
         
         with col_chart:
-            # 2. USE RAW PLOTLY GRAPH OBJECTS TO FORCE EXACT MAPPING
             fig_species = go.Figure(data=[
                 go.Bar(
                     x=x_categories,
@@ -264,7 +262,7 @@ with tab2:
                 title_font=dict(size=20, color="black"),
                 tickfont=dict(size=16, color="black"),
                 showline=True, linewidth=2, linecolor='black', mirror=False,
-                range=[0, max_y * 1.15] # 3. FORCE AXIS TO START EXACTLY AT 0
+                range=[0, max_y * 1.15] 
             )
             
             st.plotly_chart(fig_species, use_container_width=True)
@@ -311,20 +309,21 @@ with tab2:
                 showline=True, linewidth=2, linecolor='black', mirror=False
             )
             
-            # Extract max value from histogram to lock Y-axis to 0
             max_count = sir_melt.groupby(['Antibiotic', 'Result']).size().max() if not sir_melt.empty else 10
             fig_sir.update_yaxes(
                 title_text="<b>Count</b>",
                 title_font=dict(size=20, color="black"),
                 tickfont=dict(size=16, color="black"),
                 showline=True, linewidth=2, linecolor='black', mirror=False,
-                range=[0, max_count * 1.15] # FORCES AXIS TO START EXACTLY AT 0
+                range=[0, max_count * 1.15] 
             )
             
             st.plotly_chart(fig_sir, use_container_width=True)
                 
         st.divider()
-        st.subheader("Species-Specific Breed Prevalence (1 Per Case)")
+        
+        # --- TITLE UPDATED ---
+        st.subheader("Species-Specific Breed Prevalence")
         pc1, pc2 = st.columns(2)
         
         unique_demographics = df.drop_duplicates(subset=['Lab Reference'])
@@ -346,7 +345,14 @@ with tab2:
                     template="simple_white",
                     color_discrete_sequence=breed_safe_colors
                 )
-                fig_canine.update_traces(textfont_size=18, hoverlabel=dict(font_size=16))
+                
+                # --- HOVER TEMPLATE OVERRIDE ---
+                fig_canine.update_traces(
+                    hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>",
+                    textfont_size=18, 
+                    hoverlabel=dict(font_size=16)
+                )
+                
                 fig_canine.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_canine, use_container_width=True)
             else:
@@ -363,7 +369,14 @@ with tab2:
                     template="simple_white", 
                     color_discrete_sequence=breed_safe_colors 
                 )
-                fig_feline.update_traces(textfont_size=18, hoverlabel=dict(font_size=16))
+                
+                # --- HOVER TEMPLATE OVERRIDE ---
+                fig_feline.update_traces(
+                    hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>",
+                    textfont_size=18, 
+                    hoverlabel=dict(font_size=16)
+                )
+                
                 fig_feline.update_layout(font=dict(color="black", size=18), legend=dict(font=dict(size=16)))
                 st.plotly_chart(fig_feline, use_container_width=True)
             else:
