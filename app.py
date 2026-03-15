@@ -246,7 +246,7 @@ with tab2:
             fig_species.add_annotation(
                 text="Figure 1: Distribution of bacterial species identified across all processed clinical reports.",
                 xref="paper", yref="paper", 
-                x=0, y=-0.7, 
+                x=0, y=-0.6, 
                 showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
@@ -292,7 +292,7 @@ with tab2:
             fig_sir.add_annotation(
                 text="Figure 2: Overall antimicrobial susceptibility profiles (Green: Sensitive, Yellow: Intermediate, Red: Resistant).",
                 xref="paper", yref="paper", 
-                x=0, y=-0.85, 
+                x=0, y=-0.8, 
                 showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
