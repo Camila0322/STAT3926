@@ -231,6 +231,7 @@ with tab2:
                 )
             ])
             fig_species.update_layout(
+                height=600,
                 template="simple_white",
                 xaxis_title="<b>Species Identified</b>",
                 yaxis_title="<b>Total Number of Isolates</b>",
@@ -272,6 +273,7 @@ with tab2:
             
             fig_sir.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Count:</b> %{y}<extra></extra>")
             fig_sir.update_layout(
+                height=600,
                 xaxis_tickangle=-45, 
                 font=dict(color="black", size=18), 
                 legend=dict(
@@ -290,7 +292,7 @@ with tab2:
             fig_sir.add_annotation(
                 text="Figure 2: Overall antimicrobial susceptibility profiles (Green: Sensitive, Yellow: Intermediate, Red: Resistant).",
                 xref="paper", yref="paper", 
-                x=0, y=-1, 
+                x=0, y=-1.5, 
                 showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
@@ -315,7 +317,7 @@ with tab2:
                 
                 # Figure 3a Caption
                 fig_c.add_annotation(
-                    text="Figure 3(a): Demographic distribution of canine breeds<br>per unique clinical case.",
+                    text="Figure 3(a): Demographic distribution of canine breeds per unique clinical case.",
                     xref="paper", yref="paper", 
                     x=0.5, y=-0.2, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
