@@ -296,7 +296,7 @@ with tab2:
                 go.Bar(
                     x=x_cats,
                     y=y_vals,
-                    marker_color='#002b5c',
+                    marker_color='#e64646', # --- UPDATED TO BUTTON RED ---
                     hovertemplate="<b>Species Identified:</b> %{x}<br><b>Number of Isolates:</b> %{y}<extra></extra>"
                 )
             ])
@@ -402,7 +402,7 @@ with tab2:
             
             st.plotly_chart(fig_sir_pct, use_container_width=True)
             
-        # --- NEW: SAMPLE SITE DISTRIBUTION PLOT ---
+        # --- SAMPLE SITE DISTRIBUTION PLOT ---
         st.divider()
         st.subheader("Sample Site Distribution")
         
@@ -416,7 +416,7 @@ with tab2:
             go.Bar(
                 x=x_site,
                 y=y_site,
-                marker_color='#002b5c',
+                marker_color='#e64646', # --- UPDATED TO BUTTON RED ---
                 hovertemplate="<b>Sample Site:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
             )
         ])
@@ -434,7 +434,7 @@ with tab2:
         fig_site.add_annotation(
             text="Figure 4: Distribution of sample collection sites.",
             xref="paper", yref="paper", 
-            x=0, y=-0.55, 
+            x=0, y=-0.25, 
             showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
         )
         
@@ -444,7 +444,7 @@ with tab2:
         st.subheader("Species-Specific Breed Prevalence")
         pc1, pc2 = st.columns(2)
         unique_demo = df.drop_duplicates(subset=['Lab Reference'])
-        breed_pal = ['#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', '#002b5c', '#6a5acd', '#008b8b']
+        breed_pal = ['#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', '#e64646', '#6a5acd', '#008b8b'] # --- ADDED RED TO PIE PALETTE ---
         
         canine_df = unique_demo[unique_demo["Species"].str.contains("Canine", case=False, na=False)]
         with pc1:
@@ -456,11 +456,10 @@ with tab2:
                     margin=dict(b=140, t=50, l=0, r=0)
                 )
                 
-                # Updated Figure Number to 5a
                 fig_c.add_annotation(
                     text="Figure 5a: Demographic distribution of canine breeds per unique clinical case.",
                     xref="paper", yref="paper", 
-                    x=0.5, y=-0.2, 
+                    x=0, y=-0.2, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
                 )
                 
@@ -477,7 +476,6 @@ with tab2:
                     margin=dict(b=140, t=50, l=0, r=0)
                 )
                 
-                # Updated Figure Number to 5b
                 fig_f.add_annotation(
                     text="Figure 5b: Demographic distribution of feline breeds<br>per unique clinical case.",
                     xref="paper", yref="paper", 
