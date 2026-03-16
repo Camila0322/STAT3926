@@ -7,7 +7,7 @@ import io
 import plotly.express as px
 import plotly.graph_objects as go
 from openpyxl.styles import PatternFill
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # --- 1. SET PAGE CONFIG ---
 st.set_page_config(
@@ -57,16 +57,11 @@ def standardize_age(age_string):
 def standardize_date(date_string):
     if not date_string or date_string == "NA": return "NA"
     try:
-        # 1. Strip the day name (e.g., "Friday, ")
         clean_str = re.sub(r'^[a-zA-Z]+,\s*', '', date_string)
-        # 2. Strip the time (e.g., " 03:38 PM")
         clean_str = re.sub(r'\s+\d{1,2}:\d{2}\s+[APMpm]{2}$', '', clean_str)
-        
-        # 3. Parse the remaining "2 May 2025" and format to "02-05-2025"
         dt = datetime.strptime(clean_str.strip(), "%d %B %Y")
         return dt.strftime("%d-%m-%Y")
     except:
-        # Fallback if the date looks different
         try:
             dt = pd.to_datetime(date_string, errors='coerce')
             if pd.notna(dt): return dt.strftime("%d-%m-%Y")
@@ -102,7 +97,6 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # --- EXTRACT AND STANDARDIZE REPORT AND ARRIVAL DATES ---
         report_date_raw = re.search(r'Report date:\s*(.*?)(?=\s*Page:|\n)', raw_text, re.IGNORECASE)
         report_date_val = standardize_date(report_date_raw.group(1).strip() if report_date_raw else "NA")
 
@@ -151,9 +145,10 @@ def parse_pdf_report(file_object):
                 end_idx = block.find(unique_ids[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_ids) else len(block)
                 isolate_text = block[start_idx:end_idx]
                 
+                # --- ARRIVAL DATE NOW COMES FIRST ---
                 record = {
-                    "Report Date": report_date_val,
                     "Arrival Date": arrival_date_val, 
+                    "Report Date": report_date_val,
                     "Lab Reference": lab_ref_val, 
                     "Species": species_val, 
                     "Breed": breed_val, 
@@ -220,13 +215,10 @@ with tab1:
             if new_records or not master_df.empty:
                 final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
                 final_df = final_df.drop_duplicates(subset=['Lab Reference', 'Sample Type', 'Site', 'Isolate'], keep='last')
-                
-                # Save to session state so it survives reruns
                 st.session_state['processed_data'] = final_df
                 st.session_state['dupes_list'] = dupes
                 st.session_state['skipped_msgs'] = skipped_msgs
 
-    # --- RENDER DISPLAY AND DOWNLOAD OUTSIDE THE BUTTON LOOP ---
     if 'processed_data' in st.session_state:
         final_df = st.session_state['processed_data']
         
@@ -246,8 +238,9 @@ with tab1:
                 if col_name in astag_colors:
                     ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
         
-        # LIVE DATE FETCH FOR FILENAME
-        current_date = datetime.now().strftime("%d-%m-%Y")
+        # --- FORCED AUSTRALIAN TIMZONE FOR FILENAME ---
+        aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
+        current_date = aus_time.strftime("%d-%m-%Y")
         download_filename = f"AMR_Surveillance_{current_date}.xlsx"
         
         st.download_button("⬇️ Download Master Excel", buf.getvalue(), download_filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
