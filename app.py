@@ -80,8 +80,14 @@ def parse_pdf_report(file_object):
     all_identified_isolates = []
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
+        
+        # --- NEW: EXTRACT ARRIVAL DATE ---
+        arrival_date_raw = re.search(r'(?:Date Received|Date Collected|Arrival Date|Date)[\s]*:?[\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[a-zA-Z]{3,9}\s+\d{2,4})', raw_text, re.IGNORECASE)
+        arrival_date_val = arrival_date_raw.group(1).strip() if arrival_date_raw else "NA"
+        
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
+        
         species_breed = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|Our Ref|$))', raw_text, re.IGNORECASE)
         species_val = species_breed.group(1).strip() if species_breed else "NA"
         breed_val = species_breed.group(2).strip(" -") if species_breed else "NA"
@@ -121,7 +127,21 @@ def parse_pdf_report(file_object):
                 end_idx = block.find(unique_ids[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_ids) else len(block)
                 isolate_text = block[start_idx:end_idx]
                 
-                record = {"Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val, "Age": age_val, "Sex": sex_val, "Neutered": neutered_val, "Sample Type": sample_type_val.strip(), "Site": sample_site_val, "Purity": "Mixed" if len(unique_ids)>1 else "Pure", "Isolate": iso_clean}
+                # --- ADDED ARRIVAL DATE AS THE FIRST COLUMN ---
+                record = {
+                    "Arrival Date": arrival_date_val, 
+                    "Lab Reference": lab_ref_val, 
+                    "Species": species_val, 
+                    "Breed": breed_val, 
+                    "Age": age_val, 
+                    "Sex": sex_val, 
+                    "Neutered": neutered_val, 
+                    "Sample Type": sample_type_val.strip(), 
+                    "Site": sample_site_val, 
+                    "Purity": "Mixed" if len(unique_ids)>1 else "Pure", 
+                    "Isolate": iso_clean
+                }
+                
                 has_sir = False
                 for abx in antibiotics_to_check:
                     abx_esc = re.escape(abx).replace(r'Amoxicillin', r'Amox[iy]cillin').replace(r'Cefalexin', r'(?:Cefalexin|Cephalexin)')
@@ -259,13 +279,10 @@ with tab2:
         if sir_cols:
             melted = df[sir_cols].melt(var_name="ABx", value_name="Res")
             melted = melted[melted["Res"].isin(["S", "I", "R"])]
-            
-            # --- RENAMED SENSITIVE TO SUSCEPTIBLE ---
             melted['Res'] = melted['Res'].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
             
             fig_sir = px.histogram(
                 melted, x="ABx", color="Res", barmode="group", 
-                # --- UPDATED COLOR MAP AND CATEGORY ORDER ---
                 color_discrete_map={'Susceptible': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
                 category_orders={"Res": ["Resistant", "Intermediate", "Susceptible"]}, 
                 template="simple_white"
@@ -278,7 +295,6 @@ with tab2:
                 font=dict(color="black", size=18), 
                 legend=dict(
                     font=dict(size=16), 
-                    # --- UPDATED LEGEND TITLE ---
                     title=dict(text="<b>Susceptibility</b>", font=dict(size=22))
                 ),
                 margin=dict(b=260, t=50, l=0, r=0)
@@ -288,7 +304,6 @@ with tab2:
             max_c = melted.groupby(['ABx', 'Res']).size().max() if not melted.empty else 10
             fig_sir.update_yaxes(title_text="<b>Count</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_c * 1.1], rangemode="tozero")
             
-            # --- UPDATED FIGURE CAPTION ---
             fig_sir.add_annotation(
                 text="Figure 2: Overall antimicrobial susceptibility profiles (Green: Susceptible, Yellow: Intermediate, Red: Resistant).",
                 xref="paper", yref="paper", 
@@ -315,7 +330,7 @@ with tab2:
                 )
                 
                 fig_c.add_annotation(
-                    text="Figure 3(a): Demographic distribution of canine breeds per unique clinical case.",
+                    text="Figure 3a: Demographic distribution of canine breeds per unique clinical case.",
                     xref="paper", yref="paper", 
                     x=0.5, y=-0.2, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
@@ -343,5 +358,42 @@ with tab2:
                 
                 st.plotly_chart(fig_f, use_container_width=True)
             else: st.info("No Feline data identified.")
+            
+        st.divider()
+        st.header("Suggestions after consultation")
+        st.markdown("Use this normalized percentage view to instantly evaluate the statistical probability of resistance for any given antibiotic, factoring in testing frequency differences.")
+        
+        if sir_cols:
+            fig_sir_pct = px.histogram(
+                melted, x="ABx", color="Res", 
+                barmode="relative", barnorm="percent", 
+                color_discrete_map={'Susceptible': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
+                category_orders={"Res": ["Resistant", "Intermediate", "Susceptible"]}, 
+                template="simple_white"
+            )
+            
+            fig_sir_pct.update_traces(hovertemplate="<b>Antibiotic:</b> %{x}<br><b>Result:</b> %{data.name}<br><b>Percentage:</b> %{y:.1f}%<extra></extra>")
+            fig_sir_pct.update_layout(
+                height=600,
+                xaxis_tickangle=-45, 
+                font=dict(color="black", size=18), 
+                legend=dict(
+                    font=dict(size=16), 
+                    title=dict(text="<b>Susceptibility</b>", font=dict(size=22))
+                ),
+                margin=dict(b=260, t=50, l=0, r=0)
+            )
+            fig_sir_pct.update_xaxes(title_text="<b>Antibiotic</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
+            fig_sir_pct.update_yaxes(title_text="<b>Percentage (%)</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, 100], rangemode="tozero")
+            
+            fig_sir_pct.add_annotation(
+                text="Figure 4: Overall antimicrobial susceptibility profiles displayed as percentages (Green: Susceptible, Yellow: Intermediate, Red: Resistant).",
+                xref="paper", yref="paper", 
+                x=0, y=-0.75, 
+                showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
+            )
+            
+            st.plotly_chart(fig_sir_pct, use_container_width=True)
+
     else:
         st.info("💡 Process data in tab 1 to unlock analytics.")
