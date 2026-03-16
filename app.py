@@ -7,6 +7,7 @@ import io
 import plotly.express as px
 import plotly.graph_objects as go
 from openpyxl.styles import PatternFill
+from datetime import datetime # Added for dynamic file naming
 
 # --- 1. SET PAGE CONFIG ---
 st.set_page_config(
@@ -81,8 +82,11 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # --- NEW: EXTRACT ARRIVAL DATE ---
-        arrival_date_raw = re.search(r'(?:Date Received|Date Collected|Arrival Date|Date)[\s]*:?[\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[a-zA-Z]{3,9}\s+\d{2,4})', raw_text, re.IGNORECASE)
+        # --- NEW: EXTRACT REPORT AND ARRIVAL DATES ---
+        report_date_raw = re.search(r'Report date:\s*(.*?)(?=\s*Page:|\n)', raw_text, re.IGNORECASE)
+        report_date_val = report_date_raw.group(1).strip() if report_date_raw else "NA"
+
+        arrival_date_raw = re.search(r'Arrival date:\s*(.*?)(?=\s*\]|\s*Page:|\n)', raw_text, re.IGNORECASE)
         arrival_date_val = arrival_date_raw.group(1).strip() if arrival_date_raw else "NA"
         
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
@@ -127,8 +131,9 @@ def parse_pdf_report(file_object):
                 end_idx = block.find(unique_ids[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_ids) else len(block)
                 isolate_text = block[start_idx:end_idx]
                 
-                # --- ADDED ARRIVAL DATE AS THE FIRST COLUMN ---
+                # --- ADDED REPORT AND ARRIVAL DATES FIRST ---
                 record = {
+                    "Report Date": report_date_val,
                     "Arrival Date": arrival_date_val, 
                     "Lab Reference": lab_ref_val, 
                     "Species": species_val, 
@@ -212,7 +217,12 @@ with tab1:
                     for col_num, col_name in enumerate(final_df.columns, 1):
                         if col_name in astag_colors:
                             ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
-                st.download_button("⬇️ Download Master Excel", buf.getvalue(), "AMR_Surveillance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                
+                # --- DYNAMIC FILENAME GENERATION ---
+                current_date = datetime.now().strftime("%Y_%m_%d")
+                download_filename = f"AMR_Surveillance_{current_date}.xlsx"
+                
+                st.download_button("⬇️ Download Master Excel", buf.getvalue(), download_filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
             if dupes: st.warning(f"**Skipped Duplicates:** {', '.join(dupes)}")
             if skipped_msgs: 
@@ -312,52 +322,6 @@ with tab2:
             )
             
             st.plotly_chart(fig_sir, use_container_width=True)
-                
-        st.divider()
-        st.subheader("Species-Specific Breed Prevalence")
-        pc1, pc2 = st.columns(2)
-        unique_demo = df.drop_duplicates(subset=['Lab Reference'])
-        breed_pal = ['#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', '#002b5c', '#6a5acd', '#008b8b']
-        
-        canine_df = unique_demo[unique_demo["Species"].str.contains("Canine", case=False, na=False)]
-        with pc1:
-            if not canine_df.empty:
-                fig_c = px.pie(canine_df, names='Breed', hole=0.4, title="<b>🐶 Canine Breeds</b>", template="simple_white", color_discrete_sequence=breed_pal)
-                fig_c.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
-                fig_c.update_layout(
-                    font=dict(color="black", size=18),
-                    margin=dict(b=140, t=50, l=0, r=0)
-                )
-                
-                fig_c.add_annotation(
-                    text="Figure 3a: Demographic distribution of canine breeds per unique clinical case.",
-                    xref="paper", yref="paper", 
-                    x=0.5, y=-0.2, 
-                    showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
-                )
-                
-                st.plotly_chart(fig_c, use_container_width=True)
-            else: st.info("No Canine data identified.")
-
-        feline_df = unique_demo[unique_demo["Species"].str.contains("Feline", case=False, na=False)]
-        with pc2:
-            if not feline_df.empty:
-                fig_f = px.pie(feline_df, names='Breed', hole=0.4, title="<b>🐱 Feline Breeds</b>", template="simple_white", color_discrete_sequence=breed_pal)
-                fig_f.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
-                fig_f.update_layout(
-                    font=dict(color="black", size=18),
-                    margin=dict(b=140, t=50, l=0, r=0)
-                )
-                
-                fig_f.add_annotation(
-                    text="Figure 3b: Demographic distribution of feline breeds<br>per unique clinical case.",
-                    xref="paper", yref="paper", 
-                    x=0.5, y=-0.4, 
-                    showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
-                )
-                
-                st.plotly_chart(fig_f, use_container_width=True)
-            else: st.info("No Feline data identified.")
             
         st.divider()
         st.header("Suggestions after consultation")
@@ -387,13 +351,59 @@ with tab2:
             fig_sir_pct.update_yaxes(title_text="<b>Percentage (%)</b>", title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, 100], rangemode="tozero")
             
             fig_sir_pct.add_annotation(
-                text="Figure 4: Overall antimicrobial susceptibility profiles displayed as percentages (Green: Susceptible, Yellow: Intermediate, Red: Resistant).",
+                text="Figure 3: Overall antimicrobial susceptibility profiles displayed as percentages (Green: Susceptible, Yellow: Intermediate, Red: Resistant).",
                 xref="paper", yref="paper", 
                 x=0, y=-0.75, 
                 showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
             )
             
             st.plotly_chart(fig_sir_pct, use_container_width=True)
+                
+        st.divider()
+        st.subheader("Species-Specific Breed Prevalence")
+        pc1, pc2 = st.columns(2)
+        unique_demo = df.drop_duplicates(subset=['Lab Reference'])
+        breed_pal = ['#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', '#002b5c', '#6a5acd', '#008b8b']
+        
+        canine_df = unique_demo[unique_demo["Species"].str.contains("Canine", case=False, na=False)]
+        with pc1:
+            if not canine_df.empty:
+                fig_c = px.pie(canine_df, names='Breed', hole=0.4, title="<b>🐶 Canine Breeds</b>", template="simple_white", color_discrete_sequence=breed_pal)
+                fig_c.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
+                fig_c.update_layout(
+                    font=dict(color="black", size=18),
+                    margin=dict(b=140, t=50, l=0, r=0)
+                )
+                
+                fig_c.add_annotation(
+                    text="Figure 4a: Demographic distribution of canine breeds per unique clinical case.",
+                    xref="paper", yref="paper", 
+                    x=0.5, y=-0.2, 
+                    showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
+                )
+                
+                st.plotly_chart(fig_c, use_container_width=True)
+            else: st.info("No Canine data identified.")
 
+        feline_df = unique_demo[unique_demo["Species"].str.contains("Feline", case=False, na=False)]
+        with pc2:
+            if not feline_df.empty:
+                fig_f = px.pie(feline_df, names='Breed', hole=0.4, title="<b>🐱 Feline Breeds</b>", template="simple_white", color_discrete_sequence=breed_pal)
+                fig_f.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
+                fig_f.update_layout(
+                    font=dict(color="black", size=18),
+                    margin=dict(b=140, t=50, l=0, r=0)
+                )
+                
+                fig_f.add_annotation(
+                    text="Figure 4b: Demographic distribution of feline breeds<br>per unique clinical case.",
+                    xref="paper", yref="paper", 
+                    x=0.5, y=-0.4, 
+                    showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
+                )
+                
+                st.plotly_chart(fig_f, use_container_width=True)
+            else: st.info("No Feline data identified.")
+            
     else:
         st.info("💡 Process data in tab 1 to unlock analytics.")
