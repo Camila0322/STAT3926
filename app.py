@@ -426,7 +426,7 @@ with tab2:
             xaxis_title="<b>Sample Site</b>",
             yaxis_title="<b>Count</b>",
             font=dict(color="black", size=18),
-            margin=dict(b=200, t=50, l=0, r=0)
+            margin=dict(b=180, t=50, l=0, r=0)
         )
         fig_site.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
         fig_site.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y_site * 1.1], rangemode="tozero")
@@ -457,9 +457,9 @@ with tab2:
                 )
                 
                 fig_c.add_annotation(
-                    text="Figure 5a: Demographic distribution of canine breeds per unique clinical case.",
+                    text="Figure 5(a): Demographic distribution of canine breeds per unique clinical case.",
                     xref="paper", yref="paper", 
-                    x=1, y=-0.2, 
+                    x=0.75, y=-0.2, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
                 )
                 
@@ -477,7 +477,7 @@ with tab2:
                 )
                 
                 fig_f.add_annotation(
-                    text="Figure 5b: Demographic distribution of feline breeds<br>per unique clinical case.",
+                    text="Figure 5(b): Demographic distribution of feline breeds<br>per unique clinical case.",
                     xref="paper", yref="paper", 
                     x=0.5, y=-0.4, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
