@@ -296,7 +296,7 @@ with tab2:
                 go.Bar(
                     x=x_cats,
                     y=y_vals,
-                    marker_color='#e64646', # --- UPDATED TO BUTTON RED ---
+                    marker_color='#002b5c', 
                     hovertemplate="<b>Species Identified:</b> %{x}<br><b>Number of Isolates:</b> %{y}<extra></extra>"
                 )
             ])
@@ -426,7 +426,7 @@ with tab2:
             xaxis_title="<b>Sample Site</b>",
             yaxis_title="<b>Count</b>",
             font=dict(color="black", size=18),
-            margin=dict(b=220, t=50, l=0, r=0)
+            margin=dict(b=200, t=50, l=0, r=0)
         )
         fig_site.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
         fig_site.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y_site * 1.1], rangemode="tozero")
@@ -453,13 +453,13 @@ with tab2:
                 fig_c.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_c.update_layout(
                     font=dict(color="black", size=18),
-                    margin=dict(b=140, t=50, l=0, r=0)
+                    margin=dict(b=130, t=50, l=0, r=0)
                 )
                 
                 fig_c.add_annotation(
                     text="Figure 5a: Demographic distribution of canine breeds per unique clinical case.",
                     xref="paper", yref="paper", 
-                    x=0, y=-0.2, 
+                    x=1, y=-0.2, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
                 )
                 
@@ -473,7 +473,7 @@ with tab2:
                 fig_f.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_f.update_layout(
                     font=dict(color="black", size=18),
-                    margin=dict(b=140, t=50, l=0, r=0)
+                    margin=dict(b=130, t=50, l=0, r=0)
                 )
                 
                 fig_f.add_annotation(
