@@ -401,6 +401,44 @@ with tab2:
             )
             
             st.plotly_chart(fig_sir_pct, use_container_width=True)
+            
+        # --- NEW: SAMPLE SITE DISTRIBUTION PLOT ---
+        st.divider()
+        st.subheader("Sample Site Distribution")
+        
+        clean_sites = df[~df["Site"].isin(["nan", "NA", "Na", ""])]
+        site_counts = clean_sites["Site"].value_counts()
+        x_site = site_counts.index.tolist()
+        y_site = [int(v) for v in site_counts.values]
+        max_y_site = max(y_site) if y_site else 10
+        
+        fig_site = go.Figure(data=[
+            go.Bar(
+                x=x_site,
+                y=y_site,
+                marker_color='#002b5c',
+                hovertemplate="<b>Sample Site:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
+            )
+        ])
+        fig_site.update_layout(
+            height=600,
+            template="simple_white",
+            xaxis_title="<b>Sample Site</b>",
+            yaxis_title="<b>Count</b>",
+            font=dict(color="black", size=18),
+            margin=dict(b=220, t=50, l=0, r=0)
+        )
+        fig_site.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
+        fig_site.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y_site * 1.1], rangemode="tozero")
+        
+        fig_site.add_annotation(
+            text="Figure 4: Distribution of sample collection sites.",
+            xref="paper", yref="paper", 
+            x=0, y=-0.55, 
+            showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
+        )
+        
+        st.plotly_chart(fig_site, use_container_width=True)
                 
         st.divider()
         st.subheader("Species-Specific Breed Prevalence")
@@ -418,8 +456,9 @@ with tab2:
                     margin=dict(b=140, t=50, l=0, r=0)
                 )
                 
+                # Updated Figure Number to 5a
                 fig_c.add_annotation(
-                    text="Figure 4a: Demographic distribution of canine breeds per unique clinical case.",
+                    text="Figure 5a: Demographic distribution of canine breeds per unique clinical case.",
                     xref="paper", yref="paper", 
                     x=0.5, y=-0.2, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
@@ -438,8 +477,9 @@ with tab2:
                     margin=dict(b=140, t=50, l=0, r=0)
                 )
                 
+                # Updated Figure Number to 5b
                 fig_f.add_annotation(
-                    text="Figure 4b: Demographic distribution of feline breeds<br>per unique clinical case.",
+                    text="Figure 5b: Demographic distribution of feline breeds<br>per unique clinical case.",
                     xref="paper", yref="paper", 
                     x=0.5, y=-0.4, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
