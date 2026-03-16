@@ -7,7 +7,7 @@ import io
 import plotly.express as px
 import plotly.graph_objects as go
 from openpyxl.styles import PatternFill
-from datetime import datetime # Added for dynamic file naming
+from datetime import datetime
 
 # --- 1. SET PAGE CONFIG ---
 st.set_page_config(
@@ -82,7 +82,7 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # --- NEW: EXTRACT REPORT AND ARRIVAL DATES ---
+        # --- EXTRACT REPORT AND ARRIVAL DATES ---
         report_date_raw = re.search(r'Report date:\s*(.*?)(?=\s*Page:|\n)', raw_text, re.IGNORECASE)
         report_date_val = report_date_raw.group(1).strip() if report_date_raw else "NA"
 
@@ -131,7 +131,6 @@ def parse_pdf_report(file_object):
                 end_idx = block.find(unique_ids[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_ids) else len(block)
                 isolate_text = block[start_idx:end_idx]
                 
-                # --- ADDED REPORT AND ARRIVAL DATES FIRST ---
                 record = {
                     "Report Date": report_date_val,
                     "Arrival Date": arrival_date_val, 
@@ -185,9 +184,11 @@ with tab1:
             processed_refs = set(master_df["Lab Reference"].dropna().unique()) if not master_df.empty else set()
             new_records, dupes, skipped_msgs = [], [], []
             
-            pb = st.progress(0, text="Initializing...")
+            total_files = len(pdf_files)
+            # --- UPDATED PROGRESS BAR WITH FILE COUNT ---
+            pb = st.progress(0, text=f"Initializing (0/{total_files})...")
             for i, f in enumerate(pdf_files):
-                pb.progress((i)/len(pdf_files), text=f"Processing: {f.name}")
+                pb.progress((i)/total_files, text=f"Processing ({i+1}/{total_files}): {f.name}")
                 try:
                     recs, skips, ref = parse_pdf_report(f)
                     if ref in processed_refs: dupes.append(f.name)
@@ -218,8 +219,7 @@ with tab1:
                         if col_name in astag_colors:
                             ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
                 
-                # --- DYNAMIC FILENAME GENERATION ---
-                current_date = datetime.now().strftime("%Y_%m_%d")
+                current_date = datetime.now().strftime("%d-%m-%Y")
                 download_filename = f"AMR_Surveillance_{current_date}.xlsx"
                 
                 st.download_button("⬇️ Download Master Excel", buf.getvalue(), download_filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -284,13 +284,15 @@ with tab2:
             st.dataframe(pd.DataFrame({"Bacterial Species": x_cats, "Total Number of Isolates": y_vals}), use_container_width=True, hide_index=True)
             
         st.divider()
-        st.subheader("Global Resistance Profiles")
+        
         sir_cols = [c for c in df.columns if df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
+            st.subheader("Global Resistance Profiles")
             melted = df[sir_cols].melt(var_name="ABx", value_name="Res")
             melted = melted[melted["Res"].isin(["S", "I", "R"])]
             melted['Res'] = melted['Res'].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
             
+            # 1. DODGED HISTOGRAM (COUNTS)
             fig_sir = px.histogram(
                 melted, x="ABx", color="Res", barmode="group", 
                 color_discrete_map={'Susceptible': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
@@ -322,12 +324,12 @@ with tab2:
             )
             
             st.plotly_chart(fig_sir, use_container_width=True)
+
+            # 2. STACKED HISTOGRAM (PERCENTAGES)
+            st.divider()
+            st.header("Suggestions after consultation")
+            st.markdown("Use this normalized percentage view to instantly evaluate the statistical probability of resistance for any given antibiotic, factoring in testing frequency differences.")
             
-        st.divider()
-        st.header("Suggestions after consultation")
-        st.markdown("Use this normalized percentage view to instantly evaluate the statistical probability of resistance for any given antibiotic, factoring in testing frequency differences.")
-        
-        if sir_cols:
             fig_sir_pct = px.histogram(
                 melted, x="ABx", color="Res", 
                 barmode="relative", barnorm="percent", 
