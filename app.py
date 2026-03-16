@@ -54,6 +54,26 @@ def standardize_age(age_string):
     if month_match: months = int(month_match.group(1))
     return f"{years}Y {months}M"
 
+def standardize_date(date_string):
+    if not date_string or date_string == "NA": return "NA"
+    try:
+        # 1. Strip the day name (e.g., "Friday, ")
+        clean_str = re.sub(r'^[a-zA-Z]+,\s*', '', date_string)
+        # 2. Strip the time (e.g., " 03:38 PM")
+        clean_str = re.sub(r'\s+\d{1,2}:\d{2}\s+[APMpm]{2}$', '', clean_str)
+        
+        # 3. Parse the remaining "2 May 2025" and format to "02-05-2025"
+        dt = datetime.strptime(clean_str.strip(), "%d %B %Y")
+        return dt.strftime("%d-%m-%Y")
+    except:
+        # Fallback if the date looks different
+        try:
+            dt = pd.to_datetime(date_string, errors='coerce')
+            if pd.notna(dt): return dt.strftime("%d-%m-%Y")
+        except:
+            pass
+    return date_string
+
 def clean_boilerplate(text):
     lines = text.split('\n')
     scrubbed_lines = []
@@ -82,12 +102,12 @@ def parse_pdf_report(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join(page.extract_text() + "\n" for page in pdf.pages)
         
-        # --- EXTRACT REPORT AND ARRIVAL DATES ---
+        # --- EXTRACT AND STANDARDIZE REPORT AND ARRIVAL DATES ---
         report_date_raw = re.search(r'Report date:\s*(.*?)(?=\s*Page:|\n)', raw_text, re.IGNORECASE)
-        report_date_val = report_date_raw.group(1).strip() if report_date_raw else "NA"
+        report_date_val = standardize_date(report_date_raw.group(1).strip() if report_date_raw else "NA")
 
         arrival_date_raw = re.search(r'Arrival date:\s*(.*?)(?=\s*\]|\s*Page:|\n)', raw_text, re.IGNORECASE)
-        arrival_date_val = arrival_date_raw.group(1).strip() if arrival_date_raw else "NA"
+        arrival_date_val = standardize_date(arrival_date_raw.group(1).strip() if arrival_date_raw else "NA")
         
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
@@ -185,7 +205,6 @@ with tab1:
             new_records, dupes, skipped_msgs = [], [], []
             
             total_files = len(pdf_files)
-            # --- UPDATED PROGRESS BAR WITH FILE COUNT ---
             pb = st.progress(0, text=f"Initializing (0/{total_files})...")
             for i, f in enumerate(pdf_files):
                 pb.progress((i)/total_files, text=f"Processing ({i+1}/{total_files}): {f.name}")
@@ -201,33 +220,43 @@ with tab1:
             if new_records or not master_df.empty:
                 final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
                 final_df = final_df.drop_duplicates(subset=['Lab Reference', 'Sample Type', 'Site', 'Isolate'], keep='last')
+                
+                # Save to session state so it survives reruns
                 st.session_state['processed_data'] = final_df
-                
-                styled_df = final_df.style.map(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
-                st.dataframe(styled_df, use_container_width=True)
-                
-                buf = io.BytesIO()
-                astag_colors = {
-                    "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
-                    "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
-                    "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
-                } 
-                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                    styled_df.to_excel(writer, index=False, sheet_name="AMR Surveillance")
-                    ws = writer.sheets["AMR Surveillance"]
-                    for col_num, col_name in enumerate(final_df.columns, 1):
-                        if col_name in astag_colors:
-                            ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
-                
-                current_date = datetime.now().strftime("%d-%m-%Y")
-                download_filename = f"AMR_Surveillance_{current_date}.xlsx"
-                
-                st.download_button("⬇️ Download Master Excel", buf.getvalue(), download_filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            
-            if dupes: st.warning(f"**Skipped Duplicates:** {', '.join(dupes)}")
-            if skipped_msgs: 
-                st.info("### 📋 Skipped Data Summary")
-                for item in skipped_msgs: st.write(f"- {item}")
+                st.session_state['dupes_list'] = dupes
+                st.session_state['skipped_msgs'] = skipped_msgs
+
+    # --- RENDER DISPLAY AND DOWNLOAD OUTSIDE THE BUTTON LOOP ---
+    if 'processed_data' in st.session_state:
+        final_df = st.session_state['processed_data']
+        
+        styled_df = final_df.style.map(lambda v: {'S': 'background-color: #C6EFCE', 'I': 'background-color: #FFEB9C', 'R': 'background-color: #FFC7CE'}.get(v, ''))
+        st.dataframe(styled_df, use_container_width=True)
+        
+        buf = io.BytesIO()
+        astag_colors = {
+            "Penicillin": "FFC6EFCE", "Ampicillin": "FFC6EFCE", "Cefalexin": "FFC6EFCE", "Cefazolin": "FFC6EFCE", "Doxycycline": "FFC6EFCE", "Trimethoprim/sulpha": "FFC6EFCE", "Erythromycin": "FFC6EFCE", "Clindamycin": "FFC6EFCE", "Fusidic acid": "FFC6EFCE", "Chloramphenicol": "FFC6EFCE",
+            "Amoxicillin/Clavulanic acid": "FFFFEB9C", "Ticarcillin/clavulanic acid": "FFFFEB9C", "Gentamicin": "FFFFEB9C", "Neomycin": "FFFFEB9C", "Tobramycin": "FFFFEB9C",
+            "Enrofloxacin": "FFFFC7CE", "Marbofloxacin": "FFFFC7CE", "Cefovecin": "FFFFC7CE", "Ceftiofur": "FFFFC7CE", "Amikacin": "FFFFC7CE", "Imipenem": "FFFFC7CE", "Vancomycin": "FFFFC7CE", "Polymyxin B": "FFFFC7CE", "Rifampicin": "FFFFC7CE", "Oxacillin": "FFFFC7CE", "Nitrofurantoin": "FFFFC7CE"
+        } 
+        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+            styled_df.to_excel(writer, index=False, sheet_name="AMR Surveillance")
+            ws = writer.sheets["AMR Surveillance"]
+            for col_num, col_name in enumerate(final_df.columns, 1):
+                if col_name in astag_colors:
+                    ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
+        
+        # LIVE DATE FETCH FOR FILENAME
+        current_date = datetime.now().strftime("%d-%m-%Y")
+        download_filename = f"AMR_Surveillance_{current_date}.xlsx"
+        
+        st.download_button("⬇️ Download Master Excel", buf.getvalue(), download_filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
+        if st.session_state.get('dupes_list'): 
+            st.warning(f"**Skipped Duplicates:** {', '.join(st.session_state['dupes_list'])}")
+        if st.session_state.get('skipped_msgs'): 
+            st.info("### 📋 Skipped Data Summary")
+            for item in st.session_state['skipped_msgs']: st.write(f"- {item}")
 
 with tab2:
     if 'processed_data' in st.session_state:
