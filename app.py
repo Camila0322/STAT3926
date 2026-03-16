@@ -128,8 +128,28 @@ def parse_pdf_report(file_object):
                 if site_fallback: sample_type_val, sample_site_val = site_fallback.groups()
             
             sample_site_val = redact_text(sample_site_val).strip()
+            sample_site_detailed_val = "NA"
+            
             if sample_site_val and sample_site_val != "NA":
-                sample_site_val = sample_site_val[0].upper() + sample_site_val[1:]
+                parens_match = re.search(r'^(.*?)\s*\((.*?)\)', sample_site_val)
+                if parens_match:
+                    sample_site_val = parens_match.group(1).strip()
+                    detailed_part = parens_match.group(2).strip()
+                    if detailed_part:
+                        sample_site_detailed_val = detailed_part[0].upper() + detailed_part[1:]
+                else:
+                    split_site = re.split(r'[,/:\-;|]', sample_site_val, maxsplit=1)
+                    if len(split_site) > 1:
+                        sample_site_val = split_site[0].strip()
+                        detailed_part = split_site[1].strip()
+                        detailed_part = re.sub(r'[\)\]\}]+$', '', detailed_part).strip()
+                        if detailed_part:
+                            sample_site_detailed_val = detailed_part[0].upper() + detailed_part[1:]
+                
+                if sample_site_val:
+                    sample_site_val = sample_site_val[0].upper() + sample_site_val[1:]
+                else:
+                    sample_site_val = "NA"
 
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
@@ -145,7 +165,6 @@ def parse_pdf_report(file_object):
                 end_idx = block.find(unique_ids[i+1], start_idx + len(isolate_species)) if i + 1 < len(unique_ids) else len(block)
                 isolate_text = block[start_idx:end_idx]
                 
-                # --- ARRIVAL DATE NOW COMES FIRST ---
                 record = {
                     "Arrival Date": arrival_date_val, 
                     "Report Date": report_date_val,
@@ -157,6 +176,7 @@ def parse_pdf_report(file_object):
                     "Neutered": neutered_val, 
                     "Sample Type": sample_type_val.strip(), 
                     "Site": sample_site_val, 
+                    "Sample Site (Detailed)": sample_site_detailed_val, 
                     "Purity": "Mixed" if len(unique_ids)>1 else "Pure", 
                     "Isolate": iso_clean
                 }
@@ -214,7 +234,7 @@ with tab1:
 
             if new_records or not master_df.empty:
                 final_df = pd.concat([master_df, pd.DataFrame(new_records)], ignore_index=True) if not master_df.empty else pd.DataFrame(new_records)
-                final_df = final_df.drop_duplicates(subset=['Lab Reference', 'Sample Type', 'Site', 'Isolate'], keep='last')
+                final_df = final_df.drop_duplicates(subset=['Lab Reference', 'Sample Type', 'Site', 'Sample Site (Detailed)', 'Isolate'], keep='last')
                 st.session_state['processed_data'] = final_df
                 st.session_state['dupes_list'] = dupes
                 st.session_state['skipped_msgs'] = skipped_msgs
@@ -238,7 +258,6 @@ with tab1:
                 if col_name in astag_colors:
                     ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
         
-        # --- FORCED AUSTRALIAN TIMZONE FOR FILENAME ---
         aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
         current_date = aus_time.strftime("%d-%m-%Y")
         download_filename = f"AMR_Surveillance_{current_date}.xlsx"
