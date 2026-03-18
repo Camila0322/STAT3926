@@ -118,8 +118,14 @@ def parse_pdf_report(file_object):
         sample_blocks = re.split(r'^SAMPLE(?:\s+\d+)?\s*$', clean_text, flags=re.IGNORECASE | re.MULTILINE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
-        antibiotics_to_check = ["Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid", "Ampicillin", "Amoxicillin/Clavulanic acid", "Amikacin", "Oxacillin", "Gentamicin", "Imipenem", "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", "Erythromycin", "Cefoxitin", "Rifampicin", "Doxycycline", "Cefalexin", "Cefazolin", "Cefovecin", "Neomycin", "Ceftiofur", "Tobramycin", "Enrofloxacin", "Polymyxin B", "Marbofloxacin", "Fusidic acid", "Nitrofurantoin"]
-
+        antibiotics_to_check = [
+            "Amikacin", "Amoxicillin/Clavulanic acid", "Ampicillin", "Cefalexin", 
+            "Cefazolin", "Cefovecin", "Cefoxitin", "Ceftiofur", "Chloramphenicol", 
+            "Clindamycin", "Doxycycline", "Enrofloxacin", "Erythromycin", "Fusidic acid", 
+            "Gentamicin", "Imipenem", "Marbofloxacin", "Neomycin", "Nitrofurantoin", 
+            "Oxacillin", "Penicillin", "Polymyxin B", "Rifampicin", "Ticarcillin/clavulanic acid", 
+            "Tobramycin", "Trimethoprim/sulpha", "Vancomycin"
+        ]
         for block in blocks_to_process:
             sample_line = block.strip().split('\n')[0].strip()
             sample_type_val, sample_site_val = (sample_line.split(':', 1) + ["NA"])[:2] if ':' in sample_line else (sample_line, "NA")
