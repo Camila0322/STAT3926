@@ -85,7 +85,7 @@ def clean_isolate_name(name):
     if pd.isna(name): return "NA"
     name = str(name)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
-    # --- NO GROWTH LOGIC INCLUDED ---
+    # Includes "No growth" cleanup
     name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed|No)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
@@ -101,8 +101,11 @@ def parse_pdf_report(file_object):
         report_date_raw = re.search(r'Report date:\s*(.*?)(?=\s*Page:|\n)', raw_text, re.IGNORECASE)
         report_date_val = standardize_date(report_date_raw.group(1).strip() if report_date_raw else "NA")
 
-        arrival_date_raw = re.search(r'Arrival date:\s*(.*?)(?=\s*\]|\s*Page:|\n)', raw_text, re.IGNORECASE)
-        arrival_date_val = standardize_date(arrival_date_raw.group(1).strip() if arrival_date_raw else "NA")
+        # --- INCORPORATED ROBUST ARRIVAL DATE REGEX ---
+        arrival_date_raw = re.search(r'(?:Date Received|Date Collected|Arrival Date|Date)[\s]*:?[\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[a-zA-Z]{3,9}\s+\d{2,4})', raw_text, re.IGNORECASE)
+        arrival_date_val = arrival_date_raw.group(1).strip() if arrival_date_raw else "NA"
+        if arrival_date_val != "NA":
+            arrival_date_val = standardize_date(arrival_date_val)
         
         lab_ref = re.search(r'Our Ref:\s*([A-Z0-9]+\s*[\d\-]+|[A-Z0-9\-]+)', raw_text)
         lab_ref_val = lab_ref.group(1).strip() if lab_ref else "NA"
@@ -119,7 +122,7 @@ def parse_pdf_report(file_object):
         sample_blocks = re.split(r'^SAMPLE(?:\s+\d+)?\s*$', clean_text, flags=re.IGNORECASE | re.MULTILINE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
-        # --- ALPHABETIZED LIST INCLUDED ---
+        # --- ALPHABETIZED ANTIBIOTIC LIST ---
         antibiotics_to_check = [
             "Amikacin", "Amoxicillin/Clavulanic acid", "Ampicillin", "Cefalexin", 
             "Cefazolin", "Cefovecin", "Cefoxitin", "Ceftiofur", "Chloramphenicol", 
@@ -162,7 +165,7 @@ def parse_pdf_report(file_object):
 
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
-            # --- NO GROWTH REGEX INCLUDED ---
+            # Captures "No growth" phrasing alongside standard MALDI-TOF identifications
             for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed|No)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             
@@ -191,17 +194,21 @@ def parse_pdf_report(file_object):
                     "Isolate": iso_clean
                 }
                 
+                # --- HAS_SIR FILTER RE-APPLIED FOR SKIPPED SUMMARY ---
+                has_sir = False
                 for abx in antibiotics_to_check:
                     abx_esc = re.escape(abx).replace(r'Amoxicillin', r'Amox[iy]cillin').replace(r'Cefalexin', r'(?:Cefalexin|Cephalexin)')
                     match = re.search(rf'{abx_esc}(?:[^a-zA-Z]+)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b', isolate_text, re.IGNORECASE)
                     if match:
                         record[abx] = match.group(1).upper()[0]
+                        has_sir = True
                     else: 
                         record[abx] = "NA"
                 
-                # --- HAS_SIR FILTER REMOVED (Unconditional append) ---
-                extracted_data.append(record)
+                if has_sir: 
+                    extracted_data.append(record)
 
+    # Identifies isolates that were extracted but NOT appended (no S/I/R results found)
     processed_isolates = [r["Isolate"] for r in extracted_data]
     skipped_list = [iso for iso in list(set(all_identified_isolates)) if iso not in processed_isolates]
     
@@ -426,7 +433,7 @@ with tab2:
             go.Bar(
                 x=x_site,
                 y=y_site,
-                marker_color='#e64646', # --- UPDATED TO BUTTON RED ---
+                marker_color='#e64646', 
                 hovertemplate="<b>Sample Site:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
             )
         ])
@@ -454,7 +461,7 @@ with tab2:
         st.subheader("Species-Specific Breed Prevalence")
         pc1, pc2 = st.columns(2)
         unique_demo = df.drop_duplicates(subset=['Lab Reference'])
-        breed_pal = ['#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', '#e64646', '#6a5acd', '#008b8b'] # --- ADDED RED TO PIE PALETTE ---
+        breed_pal = ['#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', '#e64646', '#6a5acd', '#008b8b'] 
         
         canine_df = unique_demo[unique_demo["Species"].str.contains("Canine", case=False, na=False)]
         with pc1:
