@@ -85,7 +85,7 @@ def clean_isolate_name(name):
     if pd.isna(name): return "NA"
     name = str(name)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
-    name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed|No)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
     name = " ".join(name.split()).capitalize()
@@ -118,7 +118,15 @@ def parse_pdf_report(file_object):
         sample_blocks = re.split(r'^SAMPLE(?:\s+\d+)?\s*$', clean_text, flags=re.IGNORECASE | re.MULTILINE)
         blocks_to_process = sample_blocks[1:] if len(sample_blocks) > 1 else [clean_text]
 
-        antibiotics_to_check = ["Penicillin", "Clindamycin", "Ticarcillin/clavulanic acid", "Ampicillin", "Amoxicillin/Clavulanic acid", "Amikacin", "Oxacillin", "Gentamicin", "Imipenem", "Chloramphenicol", "Trimethoprim/sulpha", "Vancomycin", "Erythromycin", "Cefoxitin", "Rifampicin", "Doxycycline", "Cefalexin", "Cefazolin", "Cefovecin", "Neomycin", "Ceftiofur", "Tobramycin", "Enrofloxacin", "Polymyxin B", "Marbofloxacin", "Fusidic acid", "Nitrofurantoin"]
+        # --- UPDATED: Antibiotics list is now alphabetized ---
+        antibiotics_to_check = [
+            "Amikacin", "Amoxicillin/Clavulanic acid", "Ampicillin", "Cefalexin", 
+            "Cefazolin", "Cefovecin", "Cefoxitin", "Ceftiofur", "Chloramphenicol", 
+            "Clindamycin", "Doxycycline", "Enrofloxacin", "Erythromycin", "Fusidic acid", 
+            "Gentamicin", "Imipenem", "Marbofloxacin", "Neomycin", "Nitrofurantoin", 
+            "Oxacillin", "Penicillin", "Polymyxin B", "Rifampicin", "Ticarcillin/clavulanic acid", 
+            "Tobramycin", "Trimethoprim/sulpha", "Vancomycin"
+        ]
 
         for block in blocks_to_process:
             sample_line = block.strip().split('\n')[0].strip()
@@ -153,7 +161,7 @@ def parse_pdf_report(file_object):
 
             isolate_names = []
             for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block): isolate_names.append(m.group(1))
-            for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
+            for m in re.finditer(r'MALDI-TOF Identification\s*\n+\s*(?:\d+\.\s*(?:(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed|No)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?)?)?([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             for m in re.finditer(r'\b[1-9]\.\s+([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))', block, re.IGNORECASE): isolate_names.append(m.group(1))
             
             unique_ids = sorted(list(set(isolate_names)), key=lambda x: block.find(x))
@@ -181,16 +189,15 @@ def parse_pdf_report(file_object):
                     "Isolate": iso_clean
                 }
                 
-                has_sir = False
                 for abx in antibiotics_to_check:
                     abx_esc = re.escape(abx).replace(r'Amoxicillin', r'Amox[iy]cillin').replace(r'Cefalexin', r'(?:Cefalexin|Cephalexin)')
                     match = re.search(rf'{abx_esc}(?:[^a-zA-Z]+)*\b(S|I|R|Susceptible|Intermediate|Resistant)\b', isolate_text, re.IGNORECASE)
                     if match:
                         record[abx] = match.group(1).upper()[0]
-                        has_sir = True
-                    else: record[abx] = "NA"
+                    else: 
+                        record[abx] = "NA"
                 
-                if has_sir: extracted_data.append(record)
+                extracted_data.append(record)
 
     processed_isolates = [r["Isolate"] for r in extracted_data]
     skipped_list = [iso for iso in list(set(all_identified_isolates)) if iso not in processed_isolates]
@@ -296,7 +303,7 @@ with tab2:
                 go.Bar(
                     x=x_cats,
                     y=y_vals,
-                    marker_color='#002b5c', 
+                    marker_color='#e64646',
                     hovertemplate="<b>Species Identified:</b> %{x}<br><b>Number of Isolates:</b> %{y}<extra></extra>"
                 )
             ])
@@ -333,7 +340,6 @@ with tab2:
             melted = melted[melted["Res"].isin(["S", "I", "R"])]
             melted['Res'] = melted['Res'].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
             
-            # 1. DODGED HISTOGRAM (COUNTS)
             fig_sir = px.histogram(
                 melted, x="ABx", color="Res", barmode="group", 
                 color_discrete_map={'Susceptible': '#2ca02c', 'Intermediate': '#ffcc00', 'Resistant': '#d62728'}, 
@@ -366,7 +372,6 @@ with tab2:
             
             st.plotly_chart(fig_sir, use_container_width=True)
 
-            # 2. STACKED HISTOGRAM (PERCENTAGES)
             st.divider()
             st.header("Suggestions after consultation")
             st.markdown("Use this normalized percentage view to instantly evaluate the statistical probability of resistance for any given antibiotic, factoring in testing frequency differences.")
@@ -402,7 +407,6 @@ with tab2:
             
             st.plotly_chart(fig_sir_pct, use_container_width=True)
             
-        # --- SAMPLE SITE DISTRIBUTION PLOT ---
         st.divider()
         st.subheader("Sample Site Distribution")
         
@@ -416,7 +420,7 @@ with tab2:
             go.Bar(
                 x=x_site,
                 y=y_site,
-                marker_color='#e64646', # --- UPDATED TO BUTTON RED ---
+                marker_color='#e64646',
                 hovertemplate="<b>Sample Site:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
             )
         ])
@@ -426,7 +430,7 @@ with tab2:
             xaxis_title="<b>Sample Site</b>",
             yaxis_title="<b>Count</b>",
             font=dict(color="black", size=18),
-            margin=dict(b=180, t=50, l=0, r=0)
+            margin=dict(b=220, t=50, l=0, r=0)
         )
         fig_site.update_xaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black')
         fig_site.update_yaxes(title_font=dict(size=20), tickfont=dict(size=16), showline=True, linewidth=2, linecolor='black', range=[0, max_y_site * 1.1], rangemode="tozero")
@@ -434,7 +438,7 @@ with tab2:
         fig_site.add_annotation(
             text="Figure 4: Distribution of sample collection sites.",
             xref="paper", yref="paper", 
-            x=0, y=-0.25, 
+            x=0, y=-0.55, 
             showarrow=False, font=dict(size=14, color="gray"), align="left", xanchor="left", yanchor="top"
         )
         
@@ -444,7 +448,7 @@ with tab2:
         st.subheader("Species-Specific Breed Prevalence")
         pc1, pc2 = st.columns(2)
         unique_demo = df.drop_duplicates(subset=['Lab Reference'])
-        breed_pal = ['#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', '#e64646', '#6a5acd', '#008b8b'] # --- ADDED RED TO PIE PALETTE ---
+        breed_pal = ['#1f77b4', '#9467bd', '#17becf', '#e377c2', '#8c564b', '#e64646', '#6a5acd', '#008b8b'] 
         
         canine_df = unique_demo[unique_demo["Species"].str.contains("Canine", case=False, na=False)]
         with pc1:
@@ -453,13 +457,13 @@ with tab2:
                 fig_c.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_c.update_layout(
                     font=dict(color="black", size=18),
-                    margin=dict(b=130, t=50, l=0, r=0)
+                    margin=dict(b=140, t=50, l=0, r=0)
                 )
                 
                 fig_c.add_annotation(
-                    text="Figure 5(a): Demographic distribution of canine breeds per unique clinical case.",
+                    text="Figure 5a: Demographic distribution of canine breeds per unique clinical case.",
                     xref="paper", yref="paper", 
-                    x=0.75, y=-0.2, 
+                    x=0.5, y=-0.2, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
                 )
                 
@@ -473,11 +477,11 @@ with tab2:
                 fig_f.update_traces(hovertemplate="<b>Breed:</b> %{label}<br><b>Count:</b> %{value}<extra></extra>", textfont_size=18)
                 fig_f.update_layout(
                     font=dict(color="black", size=18),
-                    margin=dict(b=130, t=50, l=0, r=0)
+                    margin=dict(b=140, t=50, l=0, r=0)
                 )
                 
                 fig_f.add_annotation(
-                    text="Figure 5(b): Demographic distribution of feline breeds<br>per unique clinical case.",
+                    text="Figure 5b: Demographic distribution of feline breeds<br>per unique clinical case.",
                     xref="paper", yref="paper", 
                     x=0.5, y=-0.4, 
                     showarrow=False, font=dict(size=14, color="gray"), align="center", xanchor="center", yanchor="top"
