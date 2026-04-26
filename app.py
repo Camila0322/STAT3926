@@ -60,11 +60,11 @@ def standardize_date(date_string):
         clean_str = re.sub(r'^[a-zA-Z]+,\s*', '', date_string)
         clean_str = re.sub(r'\s+\d{1,2}:\d{2}\s+[APMpm]{2}$', '', clean_str)
         dt = datetime.strptime(clean_str.strip(), "%d %B %Y")
-        return dt.strftime("%d-%m-%Y")
+        return dt.strftime("%Y%m%d")  # Updated to YYYYMMDD
     except:
         try:
             dt = pd.to_datetime(date_string, errors='coerce')
-            if pd.notna(dt): return dt.strftime("%d-%m-%Y")
+            if pd.notna(dt): return dt.strftime("%Y%m%d")  # Updated to YYYYMMDD
         except:
             pass
     return date_string
@@ -265,7 +265,7 @@ with tab1:
                     ws.cell(1, col_num).fill = PatternFill(start_color=astag_colors[col_name], end_color=astag_colors[col_name], fill_type="solid")
         
         aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
-        current_date = aus_time.strftime("%d-%m-%Y")
+        current_date = aus_time.strftime("%Y%m%d") # Also updated the download filename date format to match
         download_filename = f"AMR_Surveillance_{current_date}.xlsx"
         
         st.download_button("⬇️ Download Master Excel", buf.getvalue(), download_filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
