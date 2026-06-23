@@ -21,88 +21,157 @@ st.set_page_config(
 )
 
 # ============================================================================
-# 2. PROFESSIONAL THEME
+# 2. MODERN BLUE THEME
 # ============================================================================
-NAVY = "#002b5c"
-NAVY_HOVER = "#013a7a"
-ACCENT = "#b3122b"
-INK = "#1f2933"
-MUTED = "#5b6770"
-LINE = "#e3e8ee"
-CANVAS = "#f4f6f8"
+BLUE_900 = "#0a2540"
+BLUE_800 = "#103a6b"
+BLUE_700 = "#14539a"
+BLUE_600 = "#1d6fd6"
+BLUE_500 = "#2f88e6"
+BLUE_400 = "#5aa2ee"
+BLUE_300 = "#93c2f4"
+BLUE_50  = "#eef5fd"
+INK      = "#0e1c2b"
+MUTED    = "#5d6e80"
+LINE     = "#e2eaf3"
+CANVAS   = "#eaf0f7"
+WHITE    = "#ffffff"
+
+BLUE_SEQ = ["#1d6fd6", "#103a6b", "#2f88e6", "#5aa2ee", "#0a2540", "#14539a", "#93c2f4", "#3f97ea"]
+SIR_CMAP = {"Susceptible": "#1aa260", "Intermediate": "#e0a400", "Resistant": "#d63a4a"}
 
 st.markdown(f"""
     <style>
-    html, body, [class*="css"] {{
-        font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+    html, body, [class*="css"], .stApp {{
+        font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         color: {INK};
+        font-size: 16px;
     }}
     .stApp {{ background-color: {CANVAS}; }}
-    .block-container {{ padding-top: 2.2rem; max-width: 1300px; }}
+    .block-container {{ padding-top: 1.4rem; max-width: 1340px; }}
 
-    /* Header banner */
-    .amr-header {{
-        border-bottom: 3px solid {NAVY};
-        padding-bottom: 0.9rem; margin-bottom: 1.6rem;
+    /* ---------- Hero ---------- */
+    .amr-hero {{
+        position: relative; overflow: hidden;
+        background: linear-gradient(125deg, {BLUE_900} 0%, {BLUE_700} 55%, {BLUE_600} 100%);
+        border-radius: 18px; padding: 2rem 2.2rem; margin-bottom: 1.6rem;
+        box-shadow: 0 14px 34px rgba(10,37,64,0.28);
     }}
-    .amr-header h1 {{
-        color: {NAVY}; font-size: 1.85rem; font-weight: 650;
-        margin: 0; letter-spacing: -0.01em;
+    .amr-hero::after {{
+        content: ""; position: absolute; top: -40%; right: -8%;
+        width: 360px; height: 360px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 70%);
     }}
-    .amr-header p {{ color: {MUTED}; font-size: 0.95rem; margin: 0.25rem 0 0 0; }}
+    .amr-hero h1 {{
+        color: {WHITE}; font-size: 2.25rem; font-weight: 800; margin: 0;
+        letter-spacing: -0.025em; line-height: 1.12;
+    }}
+    .amr-hero p {{
+        color: #d3e4fb; font-size: 1.05rem; margin: 0.5rem 0 0 0; font-weight: 500;
+    }}
+    .amr-eyebrow {{
+        display:inline-block; color:#bcd6f7; font-size:0.78rem; font-weight:700;
+        letter-spacing:0.14em; text-transform:uppercase; margin-bottom:0.5rem;
+    }}
 
-    h2, h3 {{ color: {NAVY}; font-weight: 600; }}
+    /* ---------- Section headers ---------- */
+    .sec {{
+        display:flex; align-items:center; gap:0.65rem;
+        font-size:1.4rem; font-weight:800; color:{BLUE_800};
+        letter-spacing:-0.015em; margin:0.2rem 0 1rem 0;
+    }}
+    .sec-bar {{ width:5px; height:24px; border-radius:6px;
+        background:linear-gradient(180deg,{BLUE_500},{BLUE_700}); display:inline-block; }}
+    .sec-note {{ color:{MUTED}; font-size:0.92rem; margin:-0.6rem 0 1rem 0.95rem; }}
 
-    /* Buttons */
+    /* ---------- Card panels (bordered containers) ---------- */
+    [data-testid="stVerticalBlockBorderWrapper"] {{
+        background:{WHITE}; border:1px solid {LINE} !important; border-radius:16px;
+        box-shadow:0 4px 18px rgba(14,28,43,0.06); padding:1.2rem 1.4rem;
+    }}
+
+    /* ---------- Buttons ---------- */
     .stButton>button {{
-        width: 100%; border-radius: 6px; height: 3em; border: none;
-        background-color: {NAVY}; color: #ffffff; font-weight: 600; letter-spacing: 0.01em;
-        transition: background-color 0.15s ease;
+        width:100%; border-radius:11px; height:3.2em; border:none;
+        background:linear-gradient(135deg,{BLUE_600} 0%,{BLUE_500} 100%);
+        color:{WHITE}; font-weight:700; font-size:1.02rem; letter-spacing:0.01em;
+        box-shadow:0 6px 18px rgba(29,111,214,0.32); transition:all 0.16s ease;
     }}
-    .stButton>button:hover {{ background-color: {NAVY_HOVER}; color: #ffffff; }}
+    .stButton>button:hover {{
+        background:linear-gradient(135deg,{BLUE_700} 0%,{BLUE_600} 100%);
+        box-shadow:0 9px 24px rgba(29,111,214,0.42); transform:translateY(-1px); color:{WHITE};
+    }}
     .stDownloadButton>button {{
-        border-radius: 6px; background-color: #ffffff; color: {NAVY};
-        border: 1.5px solid {NAVY}; font-weight: 600;
+        border-radius:11px; background:{WHITE}; color:{BLUE_700};
+        border:1.6px solid {BLUE_500}; font-weight:700; height:3em;
     }}
-    .stDownloadButton>button:hover {{ background-color: {NAVY}; color: #ffffff; }}
+    .stDownloadButton>button:hover {{ background:{BLUE_600}; color:{WHITE}; border-color:{BLUE_600}; }}
 
-    /* Sidebar */
-    [data-testid="stSidebar"] {{ background-color: #ffffff; border-right: 1px solid {LINE}; }}
-    [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{ color: {NAVY}; }}
+    /* ---------- Sidebar ---------- */
+    [data-testid="stSidebar"] {{ background:{WHITE}; border-right:1px solid {LINE}; }}
+    [data-testid="stSidebar"] h3 {{ color:{BLUE_800}; }}
 
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {{ gap: 0.4rem; border-bottom: 1px solid {LINE}; }}
+    /* ---------- Tabs ---------- */
+    .stTabs [data-baseweb="tab-list"] {{ gap:0.5rem; border-bottom:2px solid {LINE}; }}
     .stTabs [data-baseweb="tab"] {{
-        font-weight: 600; color: {MUTED}; padding: 0.5rem 1rem;
+        font-weight:700; font-size:1.04rem; color:{MUTED}; padding:0.6rem 1.2rem;
     }}
-    .stTabs [aria-selected="true"] {{ color: {NAVY}; }}
+    .stTabs [aria-selected="true"] {{ color:{BLUE_600}; }}
+    .stTabs [data-baseweb="tab-highlight"] {{ background:{BLUE_600}; height:3px; border-radius:3px; }}
 
-    /* Metric cards */
+    /* ---------- Metric cards ---------- */
     [data-testid="stMetric"] {{
-        background: #ffffff; border: 1px solid {LINE}; border-radius: 8px;
-        padding: 1rem 1.2rem;
+        background:linear-gradient(180deg,{WHITE} 0%,{BLUE_50} 130%);
+        border:1px solid {LINE}; border-left:5px solid {BLUE_600};
+        border-radius:14px; padding:1.15rem 1.35rem; box-shadow:0 3px 12px rgba(14,28,43,0.05);
     }}
-    [data-testid="stMetricValue"] {{ color: {NAVY}; font-weight: 700; }}
-    [data-testid="stMetricLabel"] {{ color: {MUTED}; }}
+    [data-testid="stMetricValue"] {{ color:{BLUE_700}; font-weight:900; font-size:2.25rem; }}
+    [data-testid="stMetricLabel"] {{ color:{MUTED}; font-weight:600; font-size:0.96rem; }}
 
-    /* Uploaders */
+    /* ---------- Uploaders ---------- */
     [data-testid="stFileUploader"] {{
-        background: #ffffff; border: 1px solid {LINE}; border-radius: 8px; padding: 0.6rem;
+        background:{BLUE_50}; border:1.6px dashed {BLUE_300}; border-radius:13px; padding:0.8rem;
     }}
-    .legend-chip {{
-        display:inline-block; width:12px; height:12px; border-radius:3px;
-        margin-right:6px; vertical-align:middle;
+    [data-testid="stFileUploader"] label {{ font-weight:700; color:{BLUE_800}; }}
+    [data-testid="stFileUploader"] section {{ background:transparent; }}
+
+    /* ---------- Dataframe ---------- */
+    [data-testid="stDataFrame"] {{ border-radius:12px; overflow:hidden; border:1px solid {LINE}; }}
+
+    .legend-chip {{ display:inline-block; width:14px; height:14px; border-radius:4px;
+        margin-right:8px; vertical-align:middle; }}
+    .skip-box {{
+        background:{BLUE_50}; border:1px solid {LINE}; border-left:4px solid {BLUE_400};
+        border-radius:12px; padding:0.9rem 1.1rem;
     }}
+    .skip-box b {{ color:{BLUE_800}; }}
+    .skip-box ol {{ margin:0.5rem 0 0 1.1rem; color:{INK}; }}
+    hr {{ border-color:{LINE}; }}
     </style>
 """, unsafe_allow_html=True)
+
+
+def section(title, note=None):
+    st.markdown(f"<div class='sec'><span class='sec-bar'></span>{title}</div>", unsafe_allow_html=True)
+    if note:
+        st.markdown(f"<div class='sec-note'>{note}</div>", unsafe_allow_html=True)
+
+
+def style_fig(fig, height, bottom=40):
+    fig.update_layout(
+        height=height, template="simple_white", plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=INK, size=14, family="Inter"), margin=dict(b=bottom, t=24, l=4, r=4),
+    )
+    fig.update_xaxes(showline=True, linewidth=1.4, linecolor=LINE, tickfont=dict(size=13))
+    fig.update_yaxes(showline=True, linewidth=1.4, linecolor=LINE, gridcolor=LINE, tickfont=dict(size=13))
+    return fig
+
 
 # ============================================================================
 # 3. CONFIGURATION
 # ============================================================================
-# Antibiotic columns sit in pairs in the AST sheet, starting at column 13 (0-based):
-# (zone-diameter measurement, S/I/R interpretation). We read the SECOND of each pair.
-# Keyed by POSITION (not header text) because older tabs label cefazolin "CZ 30"
-# and 2025/2026 use "CZN 30" — same drug, same column.
 AST_FIRST_ABX_COL = 13
 AST_CP_COL = 1
 AST_ISOLATE_COL = 10
@@ -114,14 +183,11 @@ CANON_ABBREVS = [
     "TIC75", "TIM85", "S5", "CN 120", "RD5", "FA10", "AN30", "IPM10", "VA30",
 ]
 
-# Final metadata columns (all from the PDF), in order.
 META_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity", "Isolate",
 ]
 
-# Antibiotic-class importance colours, keyed by AST abbreviation (Green/Yellow/Red).
-# CAZ30, FOX30, TIC75 and S5 left uncoloured pending confirmation from Bianca.
 GREEN = "FFC6EFCE"; YELLOW = "FFFFEB9C"; RED = "FFFFC7CE"
 ABX_HEADER_COLORS = {
     "AM10": GREEN, "CZN 30": GREEN, "CL30": GREEN, "DO30": GREEN, "SXT": GREEN,
@@ -222,8 +288,6 @@ def clean_isolate_name(name):
 # 6. PDF METADATA EXTRACTION  (everything except antibiotic results)
 # ============================================================================
 def parse_pdf_metadata(file_object):
-    """Return a list of per-isolate metadata records (the 13 META_COLUMNS, plus
-       internal _cp_key / _isolate_key for matching to the AST sheet)."""
     records = []
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join((page.extract_text() or "") + "\n" for page in pdf.pages)
@@ -324,7 +388,6 @@ def parse_pdf_metadata(file_object):
 # 7. AST ANTIBIOTIC LOOKUP
 # ============================================================================
 def build_ast_lookup(file_object):
-    """Return {(cp_key, isolate_lower): {abbrev: S/I/R}} from every year tab."""
     wb = openpyxl.load_workbook(file_object, read_only=True, data_only=True)
     sir_cols = {abx: AST_FIRST_ABX_COL + 1 + 2 * i for i, abx in enumerate(CANON_ABBREVS)}
     lookup = {}
@@ -348,7 +411,7 @@ def build_ast_lookup(file_object):
             key = (cp_key, str(iso).strip().lower())
             result = {abx: (row[si] if si < len(row) and row[si] in ("S", "I", "R") else "NA")
                       for abx, si in sir_cols.items()}
-            lookup.setdefault(key, result)  # first occurrence wins
+            lookup.setdefault(key, result)
     return lookup
 
 
@@ -356,8 +419,6 @@ def build_ast_lookup(file_object):
 # 8. MERGE
 # ============================================================================
 def build_dataframe(pdf_records, ast_lookup):
-    """Attach AST antibiotic results to each PDF isolate row. Keep only isolates
-       that have a matching AST row; report the rest as skipped."""
     rows, skipped = [], []
     for rec in pdf_records:
         key = (rec["_cp_key"], rec["_isolate_key"])
@@ -388,8 +449,8 @@ def build_excel(df):
 # 9. SIDEBAR
 # ============================================================================
 with st.sidebar:
-    st.markdown(f"<h3 style='margin-bottom:0;color:{NAVY};'>USYD · Veterinary Pathology</h3>"
-                f"<p style='color:{MUTED};font-size:0.85rem;margin-top:0.2rem;'>AMR Surveillance Pipeline</p>",
+    st.markdown(f"<h3 style='margin-bottom:0;color:{BLUE_800};'>USYD · Veterinary Pathology</h3>"
+                f"<p style='color:{MUTED};font-size:0.9rem;margin-top:0.2rem;'>AMR Surveillance Pipeline</p>",
                 unsafe_allow_html=True)
     st.divider()
     st.markdown("**Workflow**")
@@ -412,22 +473,28 @@ with st.sidebar:
 # 10. MAIN
 # ============================================================================
 st.markdown(
-    "<div class='amr-header'><h1>AMR National Surveillance Pipeline</h1>"
-    "<p>Antimicrobial susceptibility surveillance · Sydney School of Veterinary Science</p></div>",
+    "<div class='amr-hero'>"
+    "<span class='amr-eyebrow'>Sydney School of Veterinary Science</span>"
+    "<h1>AMR National Surveillance Pipeline</h1>"
+    "<p>Automated antimicrobial susceptibility surveillance &middot; report &amp; AST integration</p>"
+    "</div>",
     unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["Data Processing", "Analytics"])
 
 with tab1:
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        ast_file = st.file_uploader("AST LOGGING sheet (Excel)", type=["xlsx"])
-    with c2:
-        pdf_files = st.file_uploader("PDF report(s)", type=["pdf"], accept_multiple_files=True)
-    with c3:
-        master_file = st.file_uploader("Existing master (optional)", type=["xlsx"])
+    with st.container(border=True):
+        section("Upload sources", "Drop in the AST LOGGING workbook and the matching PDF report(s).")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            ast_file = st.file_uploader("AST LOGGING sheet (Excel)", type=["xlsx"])
+        with c2:
+            pdf_files = st.file_uploader("PDF report(s)", type=["pdf"], accept_multiple_files=True)
+        with c3:
+            master_file = st.file_uploader("Existing master (optional)", type=["xlsx"])
+        run = st.button("Process & Synchronise")
 
-    if st.button("Process & Synchronise"):
+    if run:
         if not ast_file:
             st.error("Please upload Bianca's AST LOGGING sheet.")
         elif not pdf_files:
@@ -465,16 +532,20 @@ with tab1:
 
     if 'processed_data' in st.session_state:
         final_df = st.session_state['processed_data']
-        st.dataframe(final_df.style.map(lambda v: SIR_FILL.get(v, '')), use_container_width=True)
+        with st.container(border=True):
+            section("Master dataset")
+            st.dataframe(final_df.style.map(lambda v: SIR_FILL.get(v, '')), use_container_width=True)
+            aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
+            fname = f"AMR_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
+            st.download_button("Download master Excel", build_excel(final_df), fname,
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
-        fname = f"AMR_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
-        st.download_button("Download master Excel", build_excel(final_df), fname,
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-        if st.session_state.get('skipped'):
-            st.info("Isolates with no matching AST row (not included): "
-                    + ", ".join(st.session_state['skipped']))
+        skipped = st.session_state.get('skipped')
+        if skipped:
+            items = "".join(f"<li>{s}</li>" for s in skipped)
+            st.markdown(
+                f"<div class='skip-box'><b>Isolates with no matching AST row (not included)</b>"
+                f"<ol>{items}</ol></div>", unsafe_allow_html=True)
         if st.session_state.get('bad'):
             for b in st.session_state['bad']:
                 st.error(b)
@@ -486,98 +557,109 @@ with tab2:
         df = st.session_state['processed_data'].copy()
         clean = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
 
+        # ---- KPI strip ----
         m1, m2, m3 = st.columns(3)
         m1.metric("Total isolates", len(clean))
         m2.metric("Unique clinical cases", clean["Lab Reference"].nunique())
         m3.metric("Unique bacteria types", clean["Isolate"].nunique())
+        st.write("")
 
-        st.divider()
-        st.subheader("Bacterial species distribution")
-        col_chart, col_data = st.columns([2, 1])
-        counts = clean["Isolate"].value_counts()
-        x_cats, y_vals = counts.index.tolist(), [int(v) for v in counts.values]
-        max_y = max(y_vals) if y_vals else 10
-        with col_chart:
-            fig = go.Figure(data=[go.Bar(x=x_cats, y=y_vals, marker_color=NAVY,
-                hovertemplate="<b>Species:</b> %{x}<br><b>Isolates:</b> %{y}<extra></extra>")])
-            fig.update_layout(height=560, template="simple_white",
-                xaxis_title="<b>Species identified</b>", yaxis_title="<b>Number of isolates</b>",
-                font=dict(color=INK, size=15), margin=dict(b=200, t=30, l=0, r=0))
-            fig.update_xaxes(tickangle=-40, showline=True, linewidth=1.5, linecolor=INK)
-            fig.update_yaxes(showline=True, linewidth=1.5, linecolor=INK, range=[0, max_y * 1.15])
-            fig.add_annotation(text="Figure 1. Distribution of bacterial species across processed reports.",
-                xref="paper", yref="paper", x=0, y=-0.42, showarrow=False,
-                font=dict(size=12, color=MUTED), align="left", xanchor="left", yanchor="top")
-            st.plotly_chart(fig, use_container_width=True)
-        with col_data:
-            st.markdown("**Verification table**")
-            st.dataframe(pd.DataFrame({"Bacterial species": x_cats, "Isolates": y_vals}),
-                         use_container_width=True, hide_index=True)
+        # ---- Bacterial species distribution ----
+        with st.container(border=True):
+            section("Bacterial species distribution",
+                    "Number of isolates identified for each organism across all processed reports.")
+            col_chart, col_data = st.columns([2, 1])
+            counts = clean["Isolate"].value_counts()
+            x_cats, y_vals = counts.index.tolist(), [int(v) for v in counts.values]
+            max_y = max(y_vals) if y_vals else 10
+            with col_chart:
+                fig = go.Figure(data=[go.Bar(x=x_cats, y=y_vals, marker_color=BLUE_600, marker_line_width=0,
+                    hovertemplate="<b>%{x}</b><br>Isolates: %{y}<extra></extra>")])
+                style_fig(fig, 540, bottom=190)
+                fig.update_layout(xaxis_title="<b>Species identified</b>", yaxis_title="<b>Number of isolates</b>")
+                fig.update_xaxes(tickangle=-40)
+                fig.update_yaxes(range=[0, max_y * 1.15])
+                st.plotly_chart(fig, use_container_width=True)
+            with col_data:
+                st.markdown("**Verification table**")
+                st.dataframe(pd.DataFrame({"Bacterial species": x_cats, "Isolates": y_vals}),
+                             use_container_width=True, hide_index=True)
 
-        # Bacterial species per host species
-        st.divider()
-        st.subheader("Species distribution per host species")
-        host_species = [s for s in clean["Species"].unique() if s not in ("NA", "nan")]
-        hcols = st.columns(max(len(host_species), 1))
-        for col, host in zip(hcols, host_species):
-            sub = clean[clean["Species"] == host]
-            sc = sub["Isolate"].value_counts()
-            with col:
-                figh = go.Figure(data=[go.Bar(
-                    x=[int(v) for v in sc.values], y=sc.index.tolist(), orientation='h',
-                    marker_color=NAVY,
-                    hovertemplate="<b>%{y}</b><br>Isolates: %{x}<extra></extra>")])
-                figh.update_layout(height=360, template="simple_white", title=f"<b>{host}</b>",
-                    xaxis_title="<b>Isolates</b>", font=dict(color=INK, size=13),
-                    margin=dict(l=0, r=10, t=40, b=40))
-                figh.update_yaxes(autorange="reversed")
-                st.plotly_chart(figh, use_container_width=True)
+        st.write("")
 
-        # Resistance profiles
-        st.divider()
+        # ---- Resistance profiles ----
         sir_cols = [c for c in df.columns if df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
-            st.subheader("Global resistance profiles")
             melted = df[sir_cols].melt(var_name="ABx", value_name="Res")
             melted = melted[melted["Res"].isin(["S", "I", "R"])]
             melted['Res'] = melted['Res'].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
-            cmap = {'Susceptible': '#2ca02c', 'Intermediate': '#e0a800', 'Resistant': ACCENT}
+            order = {"Res": ["Resistant", "Intermediate", "Susceptible"]}
 
-            fig_sir = px.histogram(melted, x="ABx", color="Res", barmode="group",
-                color_discrete_map=cmap, category_orders={"Res": ["Resistant", "Intermediate", "Susceptible"]},
-                template="simple_white")
-            fig_sir.update_traces(hovertemplate="<b>%{x}</b><br>%{data.name}: %{y}<extra></extra>")
-            fig_sir.update_layout(height=520, xaxis_tickangle=-45, font=dict(color=INK, size=14),
-                legend=dict(title="<b>Susceptibility</b>"), margin=dict(b=160, t=30, l=0, r=0))
-            max_c = melted.groupby(['ABx', 'Res']).size().max() if not melted.empty else 10
-            fig_sir.update_yaxes(title_text="<b>Count</b>", range=[0, max_c * 1.15])
-            fig_sir.update_xaxes(title_text="<b>Antibiotic</b>")
-            fig_sir.add_annotation(text="Figure 2. Antimicrobial susceptibility counts per antibiotic.",
-                xref="paper", yref="paper", x=0, y=-0.55, showarrow=False,
-                font=dict(size=12, color=MUTED), align="left", xanchor="left", yanchor="top")
-            st.plotly_chart(fig_sir, use_container_width=True)
+            with st.container(border=True):
+                section("Global resistance profiles", "Susceptibility counts per antibiotic (S / I / R).")
+                fig_sir = px.histogram(melted, x="ABx", color="Res", barmode="group",
+                    color_discrete_map=SIR_CMAP, category_orders=order, template="simple_white")
+                fig_sir.update_traces(hovertemplate="<b>%{x}</b><br>%{data.name}: %{y}<extra></extra>")
+                style_fig(fig_sir, 520, bottom=150)
+                fig_sir.update_layout(xaxis_tickangle=-45, legend=dict(title="<b>Susceptibility</b>", font=dict(size=13)))
+                max_c = melted.groupby(['ABx', 'Res']).size().max() if not melted.empty else 10
+                fig_sir.update_yaxes(title_text="<b>Count</b>", range=[0, max_c * 1.15])
+                fig_sir.update_xaxes(title_text="<b>Antibiotic</b>")
+                st.plotly_chart(fig_sir, use_container_width=True)
 
-            st.divider()
-            st.subheader("Resistance profiles (normalised %)")
-            fig_pct = px.histogram(melted, x="ABx", color="Res", barmode="relative", barnorm="percent",
-                color_discrete_map=cmap, category_orders={"Res": ["Resistant", "Intermediate", "Susceptible"]},
-                template="simple_white")
-            fig_pct.update_traces(hovertemplate="<b>%{x}</b><br>%{data.name}: %{y:.1f}%<extra></extra>")
-            fig_pct.update_layout(height=520, xaxis_tickangle=-45, font=dict(color=INK, size=14),
-                legend=dict(title="<b>Susceptibility</b>"), margin=dict(b=160, t=30, l=0, r=0))
-            fig_pct.update_yaxes(title_text="<b>Percentage (%)</b>", range=[0, 100])
-            fig_pct.update_xaxes(title_text="<b>Antibiotic</b>")
-            st.plotly_chart(fig_pct, use_container_width=True)
+            st.write("")
 
-        # Sample site
-        st.divider()
-        st.subheader("Sample site distribution")
-        clean_sites = df[~df["Site"].isin(["nan", "NA", "Na", ""])]
-        s_counts = clean_sites["Site"].value_counts()
-        figs = go.Figure(data=[go.Bar(x=s_counts.index.tolist(), y=[int(v) for v in s_counts.values],
-            marker_color=ACCENT, hovertemplate="<b>%{x}</b><br>Count: %{y}<extra></extra>")])
-        figs.update_layout(height=480, template="simple_white", xaxis_title="<b>Sample site</b>",
-            yaxis_title="<b>Count</b>", font=dict(color=INK, size=14), margin=dict(b=150, t=30, l=0, r=0))
-        figs.update_xaxes(tickangle=-40, showline=True, linewidth=1.5, linecolor=INK)
-        figs.update_yaxes(showline=True, linewidth=1.5, linecolor=INK)
-        st.plotly_chart(figs, use_container_width=True)
+            with st.container(border=True):
+                section("Resistance profiles — normalised %",
+                        "Each antibiotic shown as 100%, to compare resistance rates regardless of how often it was tested.")
+                fig_pct = px.histogram(melted, x="ABx", color="Res", barmode="relative", barnorm="percent",
+                    color_discrete_map=SIR_CMAP, category_orders=order, template="simple_white")
+                fig_pct.update_traces(hovertemplate="<b>%{x}</b><br>%{data.name}: %{y:.1f}%<extra></extra>")
+                style_fig(fig_pct, 520, bottom=150)
+                fig_pct.update_layout(xaxis_tickangle=-45, legend=dict(title="<b>Susceptibility</b>", font=dict(size=13)))
+                fig_pct.update_yaxes(title_text="<b>Percentage (%)</b>", range=[0, 100])
+                fig_pct.update_xaxes(title_text="<b>Antibiotic</b>")
+                st.plotly_chart(fig_pct, use_container_width=True)
+
+            st.write("")
+
+        # ---- Sample site ----
+        with st.container(border=True):
+            section("Sample site distribution")
+            clean_sites = df[~df["Site"].isin(["nan", "NA", "Na", ""])]
+            s_counts = clean_sites["Site"].value_counts()
+            figs = go.Figure(data=[go.Bar(x=s_counts.index.tolist(), y=[int(v) for v in s_counts.values],
+                marker_color=BLUE_500, marker_line_width=0,
+                hovertemplate="<b>%{x}</b><br>Count: %{y}<extra></extra>")])
+            style_fig(figs, 460, bottom=140)
+            figs.update_layout(xaxis_title="<b>Sample site</b>", yaxis_title="<b>Count</b>")
+            figs.update_xaxes(tickangle=-40)
+            st.plotly_chart(figs, use_container_width=True)
+
+        st.write("")
+
+        # ---- Breed prevalence (donut circles) at the end ----
+        with st.container(border=True):
+            section("Breed prevalence by host species",
+                    "One count per unique clinical case.")
+            unique_demo = clean.drop_duplicates(subset=['Lab Reference'])
+            host_species = [s for s in unique_demo["Species"].unique() if s not in ("NA", "nan")]
+            if host_species:
+                dcols = st.columns(len(host_species))
+                for col, host in zip(dcols, host_species):
+                    sub = unique_demo[unique_demo["Species"] == host]
+                    with col:
+                        figd = px.pie(sub, names="Breed", hole=0.58, color_discrete_sequence=BLUE_SEQ)
+                        figd.update_traces(textposition="outside", textinfo="label+percent",
+                            marker=dict(line=dict(color="white", width=2)),
+                            hovertemplate="<b>%{label}</b><br>Cases: %{value}<extra></extra>")
+                        figd.update_layout(height=420, template="simple_white", paper_bgcolor="rgba(0,0,0,0)",
+                            title=dict(text=f"<b>{host} breeds</b>", x=0.5, xanchor="center",
+                                       font=dict(size=17, color=BLUE_800)),
+                            font=dict(color=INK, size=13.5, family="Inter"),
+                            showlegend=False, margin=dict(t=58, b=30, l=20, r=20),
+                            annotations=[dict(text=f"<b>{len(sub)}</b><br>cases", x=0.5, y=0.5,
+                                              font=dict(size=15, color=BLUE_700), showarrow=False)])
+                        st.plotly_chart(figd, use_container_width=True)
+            else:
+                st.info("No host-species demographic data available.")
