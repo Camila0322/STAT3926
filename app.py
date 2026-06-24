@@ -80,13 +80,13 @@ st.markdown(f"""
 
     /* ---------- Section headers ---------- */
     .sec {{
-        display:flex; align-items:center; gap:0.65rem;
-        font-size:1.4rem; font-weight:800; color:{BLUE_800};
+        display:flex; align-items:center; gap:0.7rem;
+        font-size:1.6rem; font-weight:800; color:{BLUE_800};
         letter-spacing:-0.015em; margin:0.2rem 0 1rem 0;
     }}
-    .sec-bar {{ width:5px; height:24px; border-radius:6px;
+    .sec-bar {{ width:6px; height:28px; border-radius:6px;
         background:linear-gradient(180deg,{BLUE_500},{BLUE_700}); display:inline-block; }}
-    .sec-note {{ color:{MUTED}; font-size:0.92rem; margin:-0.6rem 0 1rem 0.95rem; }}
+    .sec-note {{ color:{MUTED}; font-size:1rem; margin:-0.6rem 0 1.1rem 1.1rem; }}
 
     /* ---------- Card panels (bordered containers) ---------- */
     [data-testid="stVerticalBlockBorderWrapper"] {{
@@ -127,20 +127,25 @@ st.markdown(f"""
     [data-testid="stMetric"] {{
         background:linear-gradient(180deg,{WHITE} 0%,{BLUE_50} 130%);
         border:1px solid {LINE}; border-left:5px solid {BLUE_600};
-        border-radius:14px; padding:1.15rem 1.35rem; box-shadow:0 3px 12px rgba(14,28,43,0.05);
+        border-radius:14px; padding:1.25rem 1.45rem; box-shadow:0 3px 12px rgba(14,28,43,0.05);
     }}
-    [data-testid="stMetricValue"] {{ color:{BLUE_700}; font-weight:900; font-size:2.25rem; }}
-    [data-testid="stMetricLabel"] {{ color:{MUTED}; font-weight:600; font-size:0.96rem; }}
+    [data-testid="stMetricValue"] {{ color:{BLUE_700}; font-weight:900; font-size:2.7rem; }}
+    [data-testid="stMetricLabel"] {{ color:{MUTED}; font-weight:600; font-size:1.02rem; }}
 
-    /* ---------- Uploaders ---------- */
-    [data-testid="stFileUploader"] {{
-        background:{BLUE_50}; border:1.6px dashed {BLUE_300}; border-radius:13px; padding:0.8rem;
+    /* ---------- Uploaders (blend into the section card) ---------- */
+    [data-testid="stFileUploader"] {{ background:transparent; border:none; padding:0; }}
+    [data-testid="stFileUploader"] label {{ font-weight:600; color:{BLUE_800}; font-size:0.9rem; }}
+    [data-testid="stFileUploaderDropzone"] {{
+        background:{BLUE_50}; border:1.4px dashed {BLUE_300}; border-radius:11px;
+        padding:0.5rem 0.9rem; min-height:auto;
     }}
-    [data-testid="stFileUploader"] label {{ font-weight:700; color:{BLUE_800}; }}
-    [data-testid="stFileUploader"] section {{ background:transparent; }}
+    [data-testid="stFileUploaderDropzone"] section {{ background:transparent; }}
+    [data-testid="stFileUploaderDropzoneInstructions"] span,
+    [data-testid="stFileUploaderDropzoneInstructions"] small {{ font-size:0.74rem; }}
+    [data-testid="stFileUploaderDropzone"] button {{ font-size:0.78rem; padding:0.2rem 0.7rem; }}
 
-    /* ---------- Dataframe ---------- */
-    [data-testid="stDataFrame"] {{ border-radius:12px; overflow:hidden; border:1px solid {LINE}; }}
+    /* ---------- Dataframe (sits inside a card already) ---------- */
+    [data-testid="stDataFrame"] {{ border-radius:10px; overflow:hidden; border:none; }}
 
     .legend-chip {{ display:inline-block; width:14px; height:14px; border-radius:4px;
         margin-right:8px; vertical-align:middle; }}
@@ -164,10 +169,10 @@ def section(title, note=None):
 def style_fig(fig, height, bottom=40):
     fig.update_layout(
         height=height, template="simple_white", plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=INK, size=14, family="Inter"), margin=dict(b=bottom, t=24, l=4, r=4),
+        font=dict(color=INK, size=15.5, family="Inter"), margin=dict(b=bottom, t=24, l=4, r=4),
     )
-    fig.update_xaxes(showline=True, linewidth=1.4, linecolor=LINE, tickfont=dict(size=13))
-    fig.update_yaxes(showline=True, linewidth=1.4, linecolor=LINE, gridcolor=LINE, tickfont=dict(size=13))
+    fig.update_xaxes(showline=True, linewidth=1.4, linecolor=LINE, tickfont=dict(size=14))
+    fig.update_yaxes(showline=True, linewidth=1.4, linecolor=LINE, gridcolor=LINE, tickfont=dict(size=14))
     return fig
 
 
@@ -469,7 +474,7 @@ with st.sidebar:
     st.divider()
     st.markdown("**Workflow**")
     st.markdown(
-        "1. Upload Bianca's AST LOGGING sheet\n"
+        "1. Upload the AST LOGGING sheet(s)\n"
         "2. Add the matching PDF report(s)\n"
         "3. Process — matched on CP number & isolate\n"
         "4. Download the master sheet")
@@ -503,17 +508,17 @@ tab1, tab2 = st.tabs(["Data Processing", "Analytics"])
 
 with tab1:
     with st.container(border=True):
-        section("Upload sources", "Drop in the AST LOGGING workbook and the matching PDF report(s).")
+        section("Upload sources", "Drop in the AST LOGGING sheet(s) and the matching PDF report(s).")
         c1, c2 = st.columns(2)
         with c1:
-            ast_file = st.file_uploader("AST LOGGING sheet (Excel)", type=["xlsx"])
+            ast_file = st.file_uploader("AST LOGGING sheet(s) (Excel)", type=["xlsx"])
         with c2:
             pdf_files = st.file_uploader("PDF report(s)", type=["pdf"], accept_multiple_files=True)
         run = st.button("Process & Synchronise")
 
     if run:
         if not ast_file:
-            st.error("Please upload Bianca's AST LOGGING sheet.")
+            st.error("Please upload the AST LOGGING sheet.")
         elif not pdf_files:
             st.error("Please upload at least one PDF report.")
         else:
@@ -572,76 +577,79 @@ with tab2:
         m3.metric("Unique bacteria types", clean["Isolate"].nunique())
         st.write("")
 
-        # ---- Bacterial species distribution ----
+        # ---- Bacterial species distribution (horizontal, sorted, labelled) ----
         with st.container(border=True):
             section("Bacterial species distribution",
                     "Number of isolates identified for each organism across all processed reports.")
             col_chart, col_data = st.columns([2, 1])
-            counts = clean["Isolate"].value_counts()
-            x_cats, y_vals = counts.index.tolist(), [int(v) for v in counts.values]
-            max_y = max(y_vals) if y_vals else 10
+            counts = clean["Isolate"].value_counts().sort_values(ascending=True)
+            y_cats, x_vals = counts.index.tolist(), [int(v) for v in counts.values]
             with col_chart:
-                fig = go.Figure(data=[go.Bar(x=x_cats, y=y_vals, marker_color=BLUE_600, marker_line_width=0,
-                    hovertemplate="<b>%{x}</b><br>Isolates: %{y}<extra></extra>")])
-                style_fig(fig, 540, bottom=190)
-                fig.update_layout(xaxis_title="<b>Species identified</b>", yaxis_title="<b>Number of isolates</b>")
-                fig.update_xaxes(tickangle=-40)
-                fig.update_yaxes(range=[0, max_y * 1.15])
+                fig = go.Figure(go.Bar(
+                    orientation="h", y=y_cats, x=x_vals, marker_color=BLUE_600, marker_line_width=0,
+                    text=x_vals, textposition="outside", textfont=dict(size=14, color=INK), cliponaxis=False,
+                    hovertemplate="<b>%{y}</b><br>Isolates: %{x}<extra></extra>"))
+                style_fig(fig, max(340, 38 * len(y_cats)), bottom=30)
+                fig.update_layout(xaxis_title="<b>Number of isolates</b>", yaxis_title="")
+                fig.update_xaxes(range=[0, (max(x_vals) if x_vals else 1) * 1.18])
                 st.plotly_chart(fig, use_container_width=True)
             with col_data:
                 st.markdown("**Verification table**")
-                st.dataframe(pd.DataFrame({"Bacterial species": x_cats, "Isolates": y_vals}),
-                             use_container_width=True, hide_index=True)
+                tbl = pd.DataFrame({"Bacterial species": y_cats[::-1], "Isolates": x_vals[::-1]})
+                st.dataframe(tbl, use_container_width=True, hide_index=True)
 
         st.write("")
 
-        # ---- Resistance profiles ----
+        # ---- Resistance profile (one sleek sorted 100% stacked bar, n shown inline) ----
         sir_cols = [c for c in df.columns if df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
             melted = df[sir_cols].melt(var_name="ABx", value_name="Res")
             melted = melted[melted["Res"].isin(["S", "I", "R"])]
             melted['Res'] = melted['Res'].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
-            order = {"Res": ["Resistant", "Intermediate", "Susceptible"]}
+            ct = melted.groupby(['ABx', 'Res']).size().unstack(fill_value=0)
+            for c in ['Resistant', 'Intermediate', 'Susceptible']:
+                if c not in ct.columns:
+                    ct[c] = 0
+            ct['n'] = ct[['Resistant', 'Intermediate', 'Susceptible']].sum(axis=1)
+            ct = ct[ct['n'] > 0]
+            pct = ct[['Resistant', 'Intermediate', 'Susceptible']].div(ct['n'], axis=0) * 100
+            order_cats = pct['Resistant'].sort_values(ascending=True).index.tolist()
+            labels = [f"{a}  ·  n={int(ct.loc[a, 'n'])}" for a in order_cats]
 
             with st.container(border=True):
-                section("Global resistance profiles", "Susceptibility counts per antibiotic (S / I / R).")
-                fig_sir = px.histogram(melted, x="ABx", color="Res", barmode="group",
-                    color_discrete_map=SIR_CMAP, category_orders=order, template="simple_white")
-                fig_sir.update_traces(hovertemplate="<b>%{x}</b><br>%{data.name}: %{y}<extra></extra>")
-                style_fig(fig_sir, 520, bottom=150)
-                fig_sir.update_layout(xaxis_tickangle=-45, legend=dict(title="<b>Susceptibility</b>", font=dict(size=13)))
-                max_c = melted.groupby(['ABx', 'Res']).size().max() if not melted.empty else 10
-                fig_sir.update_yaxes(title_text="<b>Count</b>", range=[0, max_c * 1.15])
-                fig_sir.update_xaxes(title_text="<b>Antibiotic</b>")
-                st.plotly_chart(fig_sir, use_container_width=True)
+                section("Resistance profile by antibiotic",
+                        "Each bar is 100% of the isolates tested for that drug, split into S / I / R and sorted by resistance. "
+                        "n = number of isolates tested (small n = interpret with caution).")
+                figR = go.Figure()
+                for res in ["Resistant", "Intermediate", "Susceptible"]:
+                    figR.add_bar(orientation="h", y=labels,
+                        x=[round(pct.loc[a, res], 1) for a in order_cats], name=res,
+                        marker_color=SIR_CMAP[res], marker_line=dict(color="white", width=1),
+                        customdata=[int(ct.loc[a, res]) for a in order_cats],
+                        hovertemplate="<b>%{y}</b><br>" + res + ": %{x:.0f}% (%{customdata} isolates)<extra></extra>")
+                style_fig(figR, max(420, 27 * len(order_cats)), bottom=40)
+                figR.update_layout(barmode="stack",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0, title="",
+                                font=dict(size=14)),
+                    xaxis_title="<b>Percentage of isolates tested (%)</b>", yaxis_title="")
+                figR.update_xaxes(range=[0, 100], ticksuffix="%")
+                st.plotly_chart(figR, use_container_width=True)
 
             st.write("")
 
-            with st.container(border=True):
-                section("Resistance profiles — normalised %",
-                        "Each antibiotic shown as 100%, to compare resistance rates regardless of how often it was tested.")
-                fig_pct = px.histogram(melted, x="ABx", color="Res", barmode="relative", barnorm="percent",
-                    color_discrete_map=SIR_CMAP, category_orders=order, template="simple_white")
-                fig_pct.update_traces(hovertemplate="<b>%{x}</b><br>%{data.name}: %{y:.1f}%<extra></extra>")
-                style_fig(fig_pct, 520, bottom=150)
-                fig_pct.update_layout(xaxis_tickangle=-45, legend=dict(title="<b>Susceptibility</b>", font=dict(size=13)))
-                fig_pct.update_yaxes(title_text="<b>Percentage (%)</b>", range=[0, 100])
-                fig_pct.update_xaxes(title_text="<b>Antibiotic</b>")
-                st.plotly_chart(fig_pct, use_container_width=True)
-
-            st.write("")
-
-        # ---- Sample site ----
+        # ---- Sample site (horizontal, sorted, labelled) ----
         with st.container(border=True):
             section("Sample site distribution")
             clean_sites = df[~df["Site"].isin(["nan", "NA", "Na", ""])]
-            s_counts = clean_sites["Site"].value_counts()
-            figs = go.Figure(data=[go.Bar(x=s_counts.index.tolist(), y=[int(v) for v in s_counts.values],
-                marker_color=BLUE_500, marker_line_width=0,
-                hovertemplate="<b>%{x}</b><br>Count: %{y}<extra></extra>")])
-            style_fig(figs, 460, bottom=140)
-            figs.update_layout(xaxis_title="<b>Sample site</b>", yaxis_title="<b>Count</b>")
-            figs.update_xaxes(tickangle=-40)
+            s_counts = clean_sites["Site"].value_counts().sort_values(ascending=True)
+            ys, xs = s_counts.index.tolist(), [int(v) for v in s_counts.values]
+            figs = go.Figure(go.Bar(
+                orientation="h", y=ys, x=xs, marker_color=BLUE_500, marker_line_width=0,
+                text=xs, textposition="outside", textfont=dict(size=14, color=INK), cliponaxis=False,
+                hovertemplate="<b>%{y}</b><br>Count: %{x}<extra></extra>"))
+            style_fig(figs, max(300, 42 * len(ys)), bottom=30)
+            figs.update_layout(xaxis_title="<b>Number of isolates</b>", yaxis_title="")
+            figs.update_xaxes(range=[0, (max(xs) if xs else 1) * 1.2])
             st.plotly_chart(figs, use_container_width=True)
 
         st.write("")
@@ -659,15 +667,16 @@ with tab2:
                     with col:
                         figd = px.pie(sub, names="Breed", hole=0.58, color_discrete_sequence=BLUE_SEQ)
                         figd.update_traces(textposition="outside", textinfo="label+percent",
+                            textfont=dict(size=14, family="Inter"),
                             marker=dict(line=dict(color="white", width=2)),
                             hovertemplate="<b>%{label}</b><br>Cases: %{value}<extra></extra>")
-                        figd.update_layout(height=420, template="simple_white", paper_bgcolor="rgba(0,0,0,0)",
+                        figd.update_layout(height=440, template="simple_white", paper_bgcolor="rgba(0,0,0,0)",
                             title=dict(text=f"<b>{host} breeds</b>", x=0.5, xanchor="center",
-                                       font=dict(size=17, color=BLUE_800)),
-                            font=dict(color=INK, size=13.5, family="Inter"),
-                            showlegend=False, margin=dict(t=58, b=30, l=20, r=20),
+                                       font=dict(size=19, color=BLUE_800)),
+                            font=dict(color=INK, size=14.5, family="Inter"),
+                            showlegend=False, margin=dict(t=64, b=34, l=24, r=24),
                             annotations=[dict(text=f"<b>{len(sub)}</b><br>cases", x=0.5, y=0.5,
-                                              font=dict(size=15, color=BLUE_700), showarrow=False)])
+                                              font=dict(size=17, color=BLUE_700), showarrow=False)])
                         st.plotly_chart(figd, use_container_width=True)
             else:
                 st.info("No host-species demographic data available.")
