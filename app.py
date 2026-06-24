@@ -4,6 +4,8 @@ import spacy
 import pandas as pd
 import re
 import io
+import os
+import base64
 import openpyxl
 import plotly.express as px
 import plotly.graph_objects as go
@@ -167,6 +169,18 @@ def style_fig(fig, height, bottom=40):
     fig.update_xaxes(showline=True, linewidth=1.4, linecolor=LINE, tickfont=dict(size=13))
     fig.update_yaxes(showline=True, linewidth=1.4, linecolor=LINE, gridcolor=LINE, tickfont=dict(size=13))
     return fig
+
+
+@st.cache_data
+def logo_data_uri():
+    """Return a base64 data URI for the white USYD logo if it sits next to app.py."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ("usyd_logo_white.png", "assets/usyd_logo_white.png"):
+        path = os.path.join(here, name)
+        if os.path.exists(path):
+            with open(path, "rb") as fh:
+                return "data:image/png;base64," + base64.b64encode(fh.read()).decode()
+    return None
 
 
 # ============================================================================
@@ -472,9 +486,14 @@ with st.sidebar:
 # ============================================================================
 # 10. MAIN
 # ============================================================================
+_logo = logo_data_uri()
+_logo_html = (f"<img src='{_logo}' alt='The University of Sydney' "
+              f"style='height:50px;margin-bottom:1rem;display:block;'/>") if _logo else \
+             "<span class='amr-eyebrow'>Sydney School of Veterinary Science</span>"
+
 st.markdown(
     "<div class='amr-hero'>"
-    "<span class='amr-eyebrow'>Sydney School of Veterinary Science</span>"
+    f"{_logo_html}"
     "<h1>AMR National Surveillance Pipeline</h1>"
     "<p>Automated antimicrobial susceptibility surveillance &middot; report &amp; AST integration</p>"
     "</div>",
@@ -485,13 +504,11 @@ tab1, tab2 = st.tabs(["Data Processing", "Analytics"])
 with tab1:
     with st.container(border=True):
         section("Upload sources", "Drop in the AST LOGGING workbook and the matching PDF report(s).")
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1:
             ast_file = st.file_uploader("AST LOGGING sheet (Excel)", type=["xlsx"])
         with c2:
             pdf_files = st.file_uploader("PDF report(s)", type=["pdf"], accept_multiple_files=True)
-        with c3:
-            master_file = st.file_uploader("Existing master (optional)", type=["xlsx"])
         run = st.button("Process & Synchronise")
 
     if run:
@@ -517,15 +534,6 @@ with tab1:
             if final_df.empty:
                 st.warning("No isolates matched between the PDF(s) and the AST sheet. Check the CP numbers and isolate names line up.")
             else:
-                if master_file:
-                    try:
-                        master_df = pd.read_excel(master_file)
-                        final_df = pd.concat([master_df, final_df], ignore_index=True)
-                        final_df = final_df.drop_duplicates(
-                            subset=['Lab Reference', 'Sample Type', 'Site', 'Sample Site (Detailed)', 'Isolate'],
-                            keep='last')
-                    except Exception as e:
-                        st.error(f"Could not read master sheet: {e}")
                 st.session_state['processed_data'] = final_df
                 st.session_state['skipped'] = skipped
                 st.session_state['bad'] = bad
