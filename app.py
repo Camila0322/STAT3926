@@ -637,6 +637,94 @@ with tab2:
 
             st.write("")
 
+            # ---- Antibiogram: bubble grid (organism x antibiotic) ----
+            with st.container(border=True):
+                section("Antibiogram by species and antibiotic",
+                        "Colour shows percent resistant (white to red). Bubble size shows how many isolates were tested. "
+                        "Grey bubbles fall below the reliability threshold, so read their percentages with caution.")
+
+                thr = st.slider("Minimum isolates for a reliable reading", 1, 30, 5,
+                                help="Species and antibiotic combinations tested fewer times than this are shown in grey. "
+                                     "Raise it as the dataset grows (formal antibiograms use 30).")
+
+                # Build organism x antibiotic summary from isolate-level results.
+                rows_long = []
+                for abx in sir_cols:
+                    s = df[["Isolate", abx]]
+                    s = s[s[abx].isin(["S", "I", "R"])]
+                    for org, res in zip(s["Isolate"], s[abx]):
+                        if org not in ("NA", "nan", "Na", ""):
+                            rows_long.append((org, abx, res))
+
+                if not rows_long:
+                    st.info("No susceptibility results available to build an antibiogram yet.")
+                else:
+                    ab = pd.DataFrame(rows_long, columns=["Organism", "ABx", "Res"])
+                    summary = (ab.groupby(["Organism", "ABx"])["Res"]
+                               .agg(n="count",
+                                    r=lambda x: int((x == "R").sum()),
+                                    i=lambda x: int((x == "I").sum()),
+                                    s=lambda x: int((x == "S").sum()))
+                               .reset_index())
+                    summary["pctR"] = summary["r"] / summary["n"] * 100
+
+                    # Axis ordering: organisms by total isolates (busiest first),
+                    # antibiotics in the master-sheet (CANON) order, top to bottom.
+                    org_order = (summary.groupby("Organism")["n"].sum()
+                                 .sort_values(ascending=False).index.tolist())
+                    abx_present = [a for a in CANON_ABBREVS if a in set(summary["ABx"])]
+                    y_order = list(reversed(abx_present))
+
+                    max_n = int(summary["n"].max())
+                    sizeref = 2.0 * max_n / (42.0 ** 2)
+
+                    def make_trace(frame, grey):
+                        cdata = list(zip(frame["pctR"], frame["n"], frame["r"], frame["i"], frame["s"]))
+                        marker = dict(size=frame["n"], sizemode="area", sizeref=sizeref, sizemin=6,
+                                      line=dict(color="#aab3bd" if grey else "#7c8794", width=0.7))
+                        if grey:
+                            marker["color"] = "#d6dce3"
+                            marker["opacity"] = 0.75
+                        else:
+                            marker["color"] = frame["pctR"]
+                            marker["colorscale"] = "Reds"
+                            marker["cmin"] = 0
+                            marker["cmax"] = 100
+                            marker["colorbar"] = dict(title="% R", thickness=14, len=0.6, x=1.02)
+                        return go.Scatter(
+                            x=frame["Organism"], y=frame["ABx"], mode="markers", marker=marker,
+                            name=("below threshold" if grey else "reliable"),
+                            customdata=cdata,
+                            hovertemplate=("<b>%{x}</b> · %{y}<br>"
+                                           "Resistant: %{customdata[0]:.0f}%<br>"
+                                           "Tested: %{customdata[1]}<br>"
+                                           "R / I / S: %{customdata[2]} / %{customdata[3]} / %{customdata[4]}"
+                                           "<extra></extra>"))
+
+                    reliable = summary[summary["n"] >= thr]
+                    low = summary[summary["n"] < thr]
+
+                    fig_ab = go.Figure()
+                    if not low.empty:
+                        fig_ab.add_trace(make_trace(low, grey=True))
+                    if not reliable.empty:
+                        fig_ab.add_trace(make_trace(reliable, grey=False))
+
+                    height = max(460, 26 * len(abx_present) + 150)
+                    style_fig(fig_ab, height, bottom=120)
+                    fig_ab.update_layout(
+                        xaxis_title="<b>Bacterial species</b>", yaxis_title="<b>Antibiotic</b>",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=13)),
+                        margin=dict(l=4, r=70, t=40, b=120))
+                    fig_ab.update_xaxes(type="category", categoryorder="array", categoryarray=org_order,
+                                        tickangle=-35, showgrid=True, gridcolor=LINE)
+                    fig_ab.update_yaxes(type="category", categoryorder="array", categoryarray=y_order,
+                                        showgrid=True, gridcolor=LINE)
+                    st.plotly_chart(fig_ab, use_container_width=True)
+                    st.caption("Dot size = isolates tested. Hover any bubble for the exact R / I / S counts.")
+
+            st.write("")
+
         # ---- Sample site (horizontal, sorted, labelled) ----
         with st.container(border=True):
             section("Sample site distribution")
