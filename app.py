@@ -442,7 +442,7 @@ def build_dataframe(pdf_records, ast_lookup):
     for rec in pdf_records:
         key = (rec["_cp_key"], rec["_isolate_key"])
         if key not in ast_lookup:
-            skipped.append(f'{rec["Lab Reference"]} — {rec["Isolate"]}')
+            skipped.append(f'{rec["Lab Reference"]}: {rec["Isolate"]}')
             continue
         merged = {col: rec[col] for col in META_COLUMNS}
         merged.update(ast_lookup[key])
@@ -476,7 +476,7 @@ with st.sidebar:
     st.markdown(
         "1. Upload the AST LOGGING sheet(s)\n"
         "2. Add the matching PDF report(s)\n"
-        "3. Process — matched on CP number & isolate\n"
+        "3. Process: match on CP number and isolate\n"
         "4. Download the master sheet")
     st.divider()
     st.markdown("**Result key**")
@@ -547,7 +547,9 @@ with tab1:
         final_df = st.session_state['processed_data']
         with st.container(border=True):
             section("Master dataset")
-            st.dataframe(final_df.style.map(lambda v: SIR_FILL.get(v, '')), use_container_width=True)
+            preview = final_df.copy()
+            preview.index = range(1, len(preview) + 1)
+            st.dataframe(preview.style.map(lambda v: SIR_FILL.get(v, '')), use_container_width=True)
             aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
             fname = f"AMR_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
             st.download_button("Download master Excel", build_excel(final_df), fname,
@@ -581,22 +583,20 @@ with tab2:
         with st.container(border=True):
             section("Bacterial species distribution",
                     "Number of isolates identified for each organism across all processed reports.")
-            col_chart, col_data = st.columns([2, 1])
             counts = clean["Isolate"].value_counts().sort_values(ascending=True)
             y_cats, x_vals = counts.index.tolist(), [int(v) for v in counts.values]
-            with col_chart:
-                fig = go.Figure(go.Bar(
-                    orientation="h", y=y_cats, x=x_vals, marker_color=BLUE_600, marker_line_width=0,
-                    text=x_vals, textposition="outside", textfont=dict(size=14, color=INK), cliponaxis=False,
-                    hovertemplate="<b>%{y}</b><br>Isolates: %{x}<extra></extra>"))
-                style_fig(fig, max(340, 38 * len(y_cats)), bottom=30)
-                fig.update_layout(xaxis_title="<b>Number of isolates</b>", yaxis_title="")
-                fig.update_xaxes(range=[0, (max(x_vals) if x_vals else 1) * 1.18])
-                st.plotly_chart(fig, use_container_width=True)
-            with col_data:
-                st.markdown("**Verification table**")
+            fig = go.Figure(go.Bar(
+                orientation="h", y=y_cats, x=x_vals, marker_color=BLUE_600, marker_line_width=0,
+                text=x_vals, textposition="outside", textfont=dict(size=14, color=INK), cliponaxis=False,
+                hovertemplate="<b>%{y}</b><br>Isolates: %{x}<extra></extra>"))
+            style_fig(fig, max(340, 38 * len(y_cats)), bottom=30)
+            fig.update_layout(xaxis_title="<b>Number of isolates</b>", yaxis_title="")
+            fig.update_xaxes(range=[0, (max(x_vals) if x_vals else 1) * 1.18])
+            st.plotly_chart(fig, use_container_width=True)
+            with st.expander("Show verification table"):
                 tbl = pd.DataFrame({"Bacterial species": y_cats[::-1], "Isolates": x_vals[::-1]})
-                st.dataframe(tbl, use_container_width=True, hide_index=True)
+                tbl.index = range(1, len(tbl) + 1)
+                st.dataframe(tbl, use_container_width=True)
 
         st.write("")
 
