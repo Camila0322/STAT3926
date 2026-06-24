@@ -170,6 +170,7 @@ def style_fig(fig, height, bottom=40):
     fig.update_layout(
         height=height, template="simple_white", plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color=INK, size=15.5, family="Inter"), margin=dict(b=bottom, t=24, l=4, r=4),
+        hoverlabel=dict(font=dict(size=16, family="Inter"), bgcolor="white", bordercolor=LINE),
     )
     fig.update_xaxes(showline=True, linewidth=1.4, linecolor=LINE, tickfont=dict(size=14))
     fig.update_yaxes(showline=True, linewidth=1.4, linecolor=LINE, gridcolor=LINE, tickfont=dict(size=14))
@@ -202,10 +203,17 @@ CANON_ABBREVS = [
     "TIC75", "TIM85", "S5", "CN 120", "RD5", "FA10", "AN30", "IPM10", "VA30",
 ]
 
-META_COLUMNS = [
+# Columns sourced from the PDF report.
+PDF_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity", "Isolate",
 ]
+# Final column order. Clinic and MALDI Score come from the AST sheet.
+OUTPUT_COLUMNS = [
+    "Arrival Date", "Report Date", "Lab Reference", "Clinic", "Species", "Breed", "Age",
+    "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity",
+    "Isolate", "MALDI Score",
+] + CANON_ABBREVS
 
 GREEN = "FFC6EFCE"; YELLOW = "FFFFEB9C"; RED = "FFFFC7CE"
 ABX_HEADER_COLORS = {
@@ -215,7 +223,26 @@ ABX_HEADER_COLORS = {
     "ENR5": RED, "MAR": RED, "CVN30": RED, "OX1": RED, "F/M300": RED,
     "RD5": RED, "AN30": RED, "IPM10": RED, "VA30": RED,
 }
-SIR_FILL = {"S": "background-color: #C6EFCE", "I": "background-color: #FFEB9C", "R": "background-color: #FFC7CE"}
+
+# Valid antibiotic-cell values. Anything else is treated as a likely typo and
+# highlighted bright red so it can be checked.
+VALID_SIR = {"S", "I", "R", "INTR"}
+
+
+def cell_css(v):
+    """Cell styling for the antibiotic columns only (applied via subset)."""
+    if v == "S":
+        return "background-color: #C6EFCE"
+    if v == "I":
+        return "background-color: #FFEB9C"
+    if v == "R":
+        return "background-color: #FFC7CE"
+    if v == "INTR":
+        return "background-color: #DCE1E8"
+    if v is None or v == "" or v == "NA" or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    # Unexpected value (typo / bad entry): flag loudly.
+    return "background-color: #FF2D2D; color: white; font-weight: 700"
 
 # ============================================================================
 # 4. MODEL LOADING
@@ -406,8 +433,30 @@ def parse_pdf_metadata(file_object):
 # ============================================================================
 # 7. AST ANTIBIOTIC LOOKUP
 # ============================================================================
+AST_CLINIC_COL = 3
+AST_MALDI_SCORE_COL = 11
+
+
+def resolve_cell(meas, sir):
+    """Resolve one antibiotic cell from its (measurement, S/I/R) pair.
+    If the measurement cell reads INTR (intrinsic resistance), record INTR.
+    Otherwise take the S/I/R interpretation. Unexpected text is kept verbatim
+    so the styler can flag it as a likely typo."""
+    if meas is not None and str(meas).strip().upper() == "INTR":
+        return "INTR"
+    if sir is None:
+        return "NA"
+    s = str(sir).strip()
+    if s.upper() in ("", "N/A", "NA"):
+        return "NA"
+    if s.upper() in ("S", "I", "R"):
+        return s.upper()
+    return s  # unexpected -> kept, highlighted red downstream
+
+
 def build_ast_lookup(file_object):
     wb = openpyxl.load_workbook(file_object, read_only=True, data_only=True)
+    meas_cols = {abx: AST_FIRST_ABX_COL + 2 * i for i, abx in enumerate(CANON_ABBREVS)}
     sir_cols = {abx: AST_FIRST_ABX_COL + 1 + 2 * i for i, abx in enumerate(CANON_ABBREVS)}
     lookup = {}
     for sheet_name in wb.sheetnames:
@@ -428,9 +477,16 @@ def build_ast_lookup(file_object):
             if not cp_key or not iso:
                 continue
             key = (cp_key, str(iso).strip().lower())
-            result = {abx: (row[si] if si < len(row) and row[si] in ("S", "I", "R") else "NA")
-                      for abx, si in sir_cols.items()}
-            lookup.setdefault(key, result)
+            entry = {
+                "Clinic": row[AST_CLINIC_COL] if AST_CLINIC_COL < len(row) and row[AST_CLINIC_COL] is not None else "NA",
+                "MALDI Score": row[AST_MALDI_SCORE_COL] if AST_MALDI_SCORE_COL < len(row) and row[AST_MALDI_SCORE_COL] is not None else "NA",
+            }
+            for abx in CANON_ABBREVS:
+                mi, si = meas_cols[abx], sir_cols[abx]
+                meas = row[mi] if mi < len(row) else None
+                sir = row[si] if si < len(row) else None
+                entry[abx] = resolve_cell(meas, sir)
+            lookup.setdefault(key, entry)
     return lookup
 
 
@@ -444,15 +500,24 @@ def build_dataframe(pdf_records, ast_lookup):
         if key not in ast_lookup:
             skipped.append(f'{rec["Lab Reference"]}: {rec["Isolate"]}')
             continue
-        merged = {col: rec[col] for col in META_COLUMNS}
-        merged.update(ast_lookup[key])
+        vals = ast_lookup[key]
+        merged = {col: rec[col] for col in PDF_COLUMNS}
+        merged["Clinic"] = vals.get("Clinic", "NA")
+        merged["MALDI Score"] = vals.get("MALDI Score", "NA")
+        for abx in CANON_ABBREVS:
+            merged[abx] = vals.get(abx, "NA")
         rows.append(merged)
-    df = pd.DataFrame(rows, columns=META_COLUMNS + CANON_ABBREVS)
+    df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
+    # Same case + same organism + identical susceptibility profile -> report once.
+    # If any antibiotic differs, both rows are kept.
+    if not df.empty:
+        df = df.drop_duplicates(subset=["Lab Reference", "Isolate"] + CANON_ABBREVS,
+                                keep="first").reset_index(drop=True)
     return df, skipped
 
 
 def build_excel(df):
-    styled = df.style.map(lambda v: SIR_FILL.get(v, ''))
+    styled = df.style.map(cell_css, subset=CANON_ABBREVS)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
         styled.to_excel(writer, index=False, sheet_name="AMR Surveillance")
@@ -549,7 +614,7 @@ with tab1:
             section("Master dataset")
             preview = final_df.copy()
             preview.index = range(1, len(preview) + 1)
-            st.dataframe(preview.style.map(lambda v: SIR_FILL.get(v, '')), use_container_width=True)
+            st.dataframe(preview.style.map(cell_css, subset=CANON_ABBREVS), use_container_width=True)
             aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
             fname = f"AMR_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
             st.download_button("Download master Excel", build_excel(final_df), fname,
@@ -601,7 +666,7 @@ with tab2:
         st.write("")
 
         # ---- Resistance profile (one sleek sorted 100% stacked bar, n shown inline) ----
-        sir_cols = [c for c in df.columns if df[c].isin(['S', 'I', 'R']).any()]
+        sir_cols = [c for c in CANON_ABBREVS if c in df.columns and df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
             melted = df[sir_cols].melt(var_name="ABx", value_name="Res")
             melted = melted[melted["Res"].isin(["S", "I", "R"])]
@@ -634,94 +699,6 @@ with tab2:
                     xaxis_title="<b>Percentage of isolates tested (%)</b>", yaxis_title="")
                 figR.update_xaxes(range=[0, 100], ticksuffix="%")
                 st.plotly_chart(figR, use_container_width=True)
-
-            st.write("")
-
-            # ---- Antibiogram: bubble grid (organism x antibiotic) ----
-            with st.container(border=True):
-                section("Antibiogram by species and antibiotic",
-                        "Colour shows percent resistant (white to red). Bubble size shows how many isolates were tested. "
-                        "Grey bubbles fall below the reliability threshold, so read their percentages with caution.")
-
-                thr = st.slider("Minimum isolates for a reliable reading", 1, 30, 5,
-                                help="Species and antibiotic combinations tested fewer times than this are shown in grey. "
-                                     "Raise it as the dataset grows (formal antibiograms use 30).")
-
-                # Build organism x antibiotic summary from isolate-level results.
-                rows_long = []
-                for abx in sir_cols:
-                    s = df[["Isolate", abx]]
-                    s = s[s[abx].isin(["S", "I", "R"])]
-                    for org, res in zip(s["Isolate"], s[abx]):
-                        if org not in ("NA", "nan", "Na", ""):
-                            rows_long.append((org, abx, res))
-
-                if not rows_long:
-                    st.info("No susceptibility results available to build an antibiogram yet.")
-                else:
-                    ab = pd.DataFrame(rows_long, columns=["Organism", "ABx", "Res"])
-                    summary = (ab.groupby(["Organism", "ABx"])["Res"]
-                               .agg(n="count",
-                                    r=lambda x: int((x == "R").sum()),
-                                    i=lambda x: int((x == "I").sum()),
-                                    s=lambda x: int((x == "S").sum()))
-                               .reset_index())
-                    summary["pctR"] = summary["r"] / summary["n"] * 100
-
-                    # Axis ordering: organisms by total isolates (busiest first),
-                    # antibiotics in the master-sheet (CANON) order, top to bottom.
-                    org_order = (summary.groupby("Organism")["n"].sum()
-                                 .sort_values(ascending=False).index.tolist())
-                    abx_present = [a for a in CANON_ABBREVS if a in set(summary["ABx"])]
-                    y_order = list(reversed(abx_present))
-
-                    max_n = int(summary["n"].max())
-                    sizeref = 2.0 * max_n / (42.0 ** 2)
-
-                    def make_trace(frame, grey):
-                        cdata = list(zip(frame["pctR"], frame["n"], frame["r"], frame["i"], frame["s"]))
-                        marker = dict(size=frame["n"], sizemode="area", sizeref=sizeref, sizemin=6,
-                                      line=dict(color="#aab3bd" if grey else "#7c8794", width=0.7))
-                        if grey:
-                            marker["color"] = "#d6dce3"
-                            marker["opacity"] = 0.75
-                        else:
-                            marker["color"] = frame["pctR"]
-                            marker["colorscale"] = "Reds"
-                            marker["cmin"] = 0
-                            marker["cmax"] = 100
-                            marker["colorbar"] = dict(title="% R", thickness=14, len=0.6, x=1.02)
-                        return go.Scatter(
-                            x=frame["Organism"], y=frame["ABx"], mode="markers", marker=marker,
-                            name=("below threshold" if grey else "reliable"),
-                            customdata=cdata,
-                            hovertemplate=("<b>%{x}</b> · %{y}<br>"
-                                           "Resistant: %{customdata[0]:.0f}%<br>"
-                                           "Tested: %{customdata[1]}<br>"
-                                           "R / I / S: %{customdata[2]} / %{customdata[3]} / %{customdata[4]}"
-                                           "<extra></extra>"))
-
-                    reliable = summary[summary["n"] >= thr]
-                    low = summary[summary["n"] < thr]
-
-                    fig_ab = go.Figure()
-                    if not low.empty:
-                        fig_ab.add_trace(make_trace(low, grey=True))
-                    if not reliable.empty:
-                        fig_ab.add_trace(make_trace(reliable, grey=False))
-
-                    height = max(460, 26 * len(abx_present) + 150)
-                    style_fig(fig_ab, height, bottom=120)
-                    fig_ab.update_layout(
-                        xaxis_title="<b>Bacterial species</b>", yaxis_title="<b>Antibiotic</b>",
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=13)),
-                        margin=dict(l=4, r=70, t=40, b=120))
-                    fig_ab.update_xaxes(type="category", categoryorder="array", categoryarray=org_order,
-                                        tickangle=-35, showgrid=True, gridcolor=LINE)
-                    fig_ab.update_yaxes(type="category", categoryorder="array", categoryarray=y_order,
-                                        showgrid=True, gridcolor=LINE)
-                    st.plotly_chart(fig_ab, use_container_width=True)
-                    st.caption("Dot size = isolates tested. Hover any bubble for the exact R / I / S counts.")
 
             st.write("")
 
@@ -762,6 +739,7 @@ with tab2:
                             title=dict(text=f"<b>{host} breeds</b>", x=0.5, xanchor="center",
                                        font=dict(size=19, color=BLUE_800)),
                             font=dict(color=INK, size=14.5, family="Inter"),
+                            hoverlabel=dict(font=dict(size=16, family="Inter"), bgcolor="white", bordercolor=LINE),
                             showlegend=False, margin=dict(t=64, b=34, l=24, r=24),
                             annotations=[dict(text=f"<b>{len(sub)}</b><br>cases", x=0.5, y=0.5,
                                               font=dict(size=17, color=BLUE_700), showarrow=False)])
