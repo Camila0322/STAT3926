@@ -256,28 +256,35 @@ OUTPUT_COLUMNS = [
 # Gram status by genus (the first word of the isolate name). Lowercase keys.
 # Unknown genera return "NA" so they show up and the lists can be extended.
 GRAM_POSITIVE_GENERA = {
-    "staphylococcus", "mammaliicoccus", "streptococcus", "enterococcus", "lactococcus",
-    "aerococcus", "gemella", "micrococcus", "kocuria", "rothia", "listeria", "bacillus",
-    "lysinibacillus", "paenibacillus", "clostridium", "clostridioides", "corynebacterium",
-    "rhodococcus", "arcanobacterium", "trueperella", "actinomyces", "nocardia", "erysipelothrix",
-    "lactobacillus", "lactiplantibacillus", "limosilactobacillus", "ligilactobacillus",
-    "peptostreptococcus", "finegoldia", "anaerococcus", "peptoniphilus", "cutibacterium",
-    "propionibacterium", "mycobacterium", "dermatophilus", "globicatella", "facklamia",
-    "weissella", "leuconostoc", "pediococcus", "vagococcus", "helcococcus",
+    "actinomyces", "aerococcus", "anaerococcus", "arcanobacterium", "atopobium",
+    "bacillus", "brevibacterium", "cellulosimicrobium", "clostridioides", "clostridium",
+    "corynebacterium", "cutibacterium", "dermatophilus", "enterococcus", "erysipelothrix",
+    "exiguobacterium", "facklamia", "finegoldia", "gemella", "globicatella",
+    "granulicatella", "helcococcus", "kocuria", "lactiplantibacillus", "lactobacillus",
+    "lactococcus", "leuconostoc", "ligilactobacillus", "limosilactobacillus", "listeria",
+    "lysinibacillus", "macrococcus", "mammaliicoccus", "micrococcus", "mycobacterium",
+    "nocardia", "nocardiopsis", "paenarthrobacter", "paenibacillus", "paeniclostridium",
+    "pediococcus", "peptoniphilus", "peptostreptococcus", "priestia", "propionibacterium",
+    "pseudarthrobacter", "rhodococcus", "rossellomorea", "rothia", "schaalia",
+    "staphylococcus", "streptococcus", "streptomyces", "terrisporobacter", "trueperella",
+    "vagococcus", "weissella", "winkia",
 }
 GRAM_NEGATIVE_GENERA = {
-    "escherichia", "klebsiella", "enterobacter", "citrobacter", "proteus", "providencia",
-    "morganella", "serratia", "salmonella", "shigella", "yersinia", "pantoea", "cronobacter",
-    "raoultella", "lelliottia", "kluyvera", "pluralibacter", "hafnia", "edwardsiella",
-    "pseudomonas", "stenotrophomonas", "acinetobacter", "burkholderia", "achromobacter",
-    "alcaligenes", "comamonas", "sphingomonas", "ochrobactrum", "brevundimonas",
-    "pasteurella", "mannheimia", "bibersteinia", "histophilus", "actinobacillus",
-    "haemophilus", "avibacterium", "gallibacterium", "bordetella", "moraxella", "neisseria",
-    "brucella", "bartonella", "francisella", "taylorella", "campylobacter", "helicobacter",
-    "arcobacter", "vibrio", "aeromonas", "plesiomonas", "bacteroides", "fusobacterium",
-    "prevotella", "porphyromonas", "dichelobacter", "chryseobacterium", "elizabethkingia",
-    "flavobacterium", "capnocytophaga", "ornithobacterium", "riemerella", "leptospira",
-    "wohlfahrtiimonas", "lonepinella", "phocoenobacter",
+    "achromobacter", "acinetobacter", "actinobacillus", "aeromonas", "alcaligenes",
+    "arcobacter", "avibacterium", "bacteroides", "bartonella", "bibersteinia",
+    "bordetella", "brevundimonas", "brucella", "burkholderia", "campylobacter",
+    "capnocytophaga", "chryseobacterium", "citrobacter", "comamonas", "cronobacter",
+    "dichelobacter", "edwardsiella", "eikenella", "elizabethkingia", "empedobacter",
+    "enterobacter", "escherichia", "filobacterium", "flavobacterium", "francisella",
+    "frederiksenia", "fusobacterium", "gallibacterium", "haemophilus", "hafnia",
+    "helicobacter", "histophilus", "klebsiella", "kluyvera", "lelliottia", "leptospira",
+    "lonepinella", "mannheimia", "moraxella", "morganella", "neisseria", "ochrobactrum",
+    "oligella", "ornithobacterium", "pantoea", "pasteurella", "phocoenobacter",
+    "photobacterium", "plesiomonas", "pluralibacter", "porphyromonas", "prevotella",
+    "proteus", "providencia", "pseudescherichia", "pseudomonas", "psychrobacter",
+    "raoultella", "riemerella", "rodentibacter", "salmonella", "serratia", "shewanella",
+    "shigella", "sphingomonas", "stenotrophomonas", "taylorella", "veillonella", "vibrio",
+    "wohlfahrtiimonas", "yersinia", "yokenella",
 }
 
 
@@ -601,34 +608,55 @@ def build_dataframe(pdf_records, ast_lookup):
 
 
 def build_excel(df):
-    styled = df.style.map(cell_css, subset=CANON_ABBREVS)
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "AMR Surveillance"
+    cols = list(df.columns)
+    abx_set = set(CANON_ABBREVS)
+
+    header_font = Font(bold=True, color="103A6B", size=11)
+    header_border = Border(bottom=Side(style="medium", color="103A6B"))
+    fill_map = {"S": "C6EFCE", "I": "FFEB9C", "R": "FFC7CE", "INTR": "BFE3F7"}
+    typo_fill = PatternFill("solid", fgColor="FF2D2D")
+    typo_font = Font(bold=True, color="FFFFFF")
+
+    # Header row
+    for j, name in enumerate(cols, 1):
+        c = ws.cell(1, j, name)
+        c.font = header_font
+        c.border = header_border
+        c.alignment = Alignment(horizontal="center" if name in abx_set else "left", vertical="center")
+
+    # Data rows
+    for i, (_, row) in enumerate(df.iterrows(), start=2):
+        for j, name in enumerate(cols, 1):
+            v = row[name]
+            blank = v is None or (isinstance(v, float) and pd.isna(v))
+            cell = ws.cell(i, j, "" if blank else v)
+            if name in abx_set:
+                cell.alignment = Alignment(horizontal="center")
+                sval = "" if blank else str(v).strip()
+                if sval in fill_map:
+                    cell.fill = PatternFill("solid", fgColor=fill_map[sval])
+                elif sval not in ("", "NA"):
+                    cell.fill = typo_fill
+                    cell.font = typo_font
+
+    # Column widths
+    for j, name in enumerate(cols, 1):
+        letter = ws.cell(1, j).column_letter
+        if name in abx_set:
+            ws.column_dimensions[letter].width = 8
+        else:
+            longest = max([len(str(name))] + df[name].astype(str).map(len).tolist())
+            ws.column_dimensions[letter].width = min(max(longest + 2, 10), 34)
+
+    ws.row_dimensions[1].height = 22
+    ws.freeze_panes = "A2"  # freeze the header row only, so horizontal scrolling works
+
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-        styled.to_excel(writer, index=False, sheet_name="AMR Surveillance")
-        ws = writer.sheets["AMR Surveillance"]
-
-        header_font = Font(bold=True, color="103A6B", size=11)
-        header_border = Border(bottom=Side(style="medium", color="103A6B"))
-        n_rows = ws.max_row
-
-        for col_num, col_name in enumerate(df.columns, 1):
-            cell = ws.cell(1, col_num)
-            cell.font = header_font
-            cell.border = header_border
-            is_abx = col_name in CANON_ABBREVS
-            cell.alignment = Alignment(horizontal="center" if is_abx else "left", vertical="center")
-            letter = cell.column_letter
-            if is_abx:
-                ws.column_dimensions[letter].width = 8
-                for row_num in range(2, n_rows + 1):
-                    ws.cell(row_num, col_num).alignment = Alignment(horizontal="center")
-            else:
-                vals = [str(col_name)] + [str(v) for v in df[col_name].tolist()]
-                ws.column_dimensions[letter].width = min(max(max(len(x) for x in vals) + 2, 10), 34)
-
-        ws.row_dimensions[1].height = 22
-        # Keep the case identifiers and organism visible while scrolling the antibiotics.
-        ws.freeze_panes = "O2"
+    wb.save(buf)
     return buf.getvalue()
 
 
@@ -851,9 +879,9 @@ with tab2:
                 fig.update_xaxes(range=[0, 100], ticksuffix="%")
                 return fig
 
-            for gram_label, gram_val in [("Gram-positive", "Positive"), ("Gram-negative", "Negative")]:
+            for gram_label, gram_val in [("Gram Positive", "Positive"), ("Gram Negative", "Negative")]:
                 with st.container(border=True):
-                    section(f"Resistance profile by antibiotic — {gram_label}",
+                    section(f"Resistance profile by antibiotic: {gram_label}",
                             "Each bar is 100% of the isolates tested for that drug, split into S / I / R and sorted by "
                             "resistance. n = number of isolates tested (small n = interpret with caution). "
                             "Hover a segment to see which organisms it is.")
