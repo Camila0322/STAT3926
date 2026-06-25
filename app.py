@@ -163,6 +163,23 @@ st.markdown(f"""
     }}
     .skip-box b {{ color:{BLUE_800}; }}
     .skip-box ol {{ margin:0.5rem 0 0 1.1rem; color:{INK}; }}
+
+    /* ---------- Message callouts ---------- */
+    .callout {{
+        background:{WHITE}; border:1px solid {LINE}; border-radius:13px;
+        padding:0.9rem 1.15rem; margin:0.6rem 0; box-shadow:0 2px 10px rgba(14,28,43,0.05);
+    }}
+    .callout-head {{
+        display:flex; align-items:center; gap:0.55rem;
+        font-weight:800; font-size:1.06rem; color:{INK};
+    }}
+    .callout-dot {{ width:11px; height:11px; border-radius:50%; display:inline-block; flex:0 0 auto; }}
+    .callout-count {{
+        margin-left:auto; border-radius:999px; padding:0.12rem 0.7rem;
+        font-size:0.82rem; font-weight:800; line-height:1.4;
+    }}
+    .callout ol, .callout ul {{ margin:0.6rem 0 0.1rem 1.3rem; color:{INK}; }}
+    .callout li {{ margin:0.2rem 0; padding-left:0.15rem; }}
     hr {{ border-color:{LINE}; }}
     </style>
 """, unsafe_allow_html=True)
@@ -172,6 +189,19 @@ def section(title, note=None):
     st.markdown(f"<div class='sec'><span class='sec-bar'></span>{title}</div>", unsafe_allow_html=True)
     if note:
         st.markdown(f"<div class='sec-note'>{note}</div>", unsafe_allow_html=True)
+
+
+def render_callout(title, items, accent, tint, ordered=True):
+    """Render a styled message box with a coloured accent, a count badge and a list."""
+    tag = "ol" if ordered else "ul"
+    lis = "".join(f"<li>{it}</li>" for it in items)
+    st.markdown(
+        f"<div class='callout' style='border-left:4px solid {accent};'>"
+        f"<div class='callout-head'>"
+        f"<span class='callout-dot' style='background:{accent};'></span>{title}"
+        f"<span class='callout-count' style='background:{tint};color:{accent};'>{len(items)}</span>"
+        f"</div><{tag}>{lis}</{tag}></div>",
+        unsafe_allow_html=True)
 
 
 def style_fig(fig, height, bottom=40):
@@ -700,8 +730,8 @@ with tab1:
         final_df = st.session_state['processed_data']
 
         if st.session_state.get('dupes'):
-            msg = "  \n".join(f"- {d}" for d in st.session_state['dupes'])
-            st.warning("Possible duplicate uploads detected:  \n" + msg)
+            render_callout("Possible duplicate uploads", st.session_state['dupes'],
+                           "#d99000", "#FBF1D6", ordered=False)
 
         with st.container(border=True):
             section("Master dataset")
@@ -726,27 +756,21 @@ with tab1:
 
         # 1) Unexpected antibiotic values (likely typos)
         if typo_map:
-            items = "".join(f"<li>{k} ({', '.join(vs)})</li>" for k, vs in sorted(typo_map.items()))
-            st.markdown(
-                f"<div class='skip-box' style='border-left-color:#FF2D2D;'>"
-                f"<b>Isolates to check (unexpected antibiotic values)</b><ol>{items}</ol></div>",
-                unsafe_allow_html=True)
+            items = [f"{k} ({', '.join(vs)})" for k, vs in sorted(typo_map.items())]
+            render_callout("Isolates to check (unexpected antibiotic values)", items,
+                           "#FF2D2D", "#FFE4E4")
 
         # 2) Intrinsic results
         if intr_map:
-            items = "".join(f"<li>{k} ({', '.join(vs)})</li>" for k, vs in sorted(intr_map.items()))
-            st.markdown(
-                f"<div class='skip-box' style='border-left-color:#BFE3F7;'>"
-                f"<b>Isolates with intrinsic results (INTR)</b><ol>{items}</ol></div>",
-                unsafe_allow_html=True)
+            items = [f"{k} ({', '.join(vs)})" for k, vs in sorted(intr_map.items())]
+            render_callout("Isolates with intrinsic results (INTR)", items,
+                           "#2f88e6", "#E4F1FC")
 
         # 3) Isolates with no matching AST row
         skipped = st.session_state.get('skipped')
         if skipped:
-            items = "".join(f"<li>{s}</li>" for s in sorted(skipped))
-            st.markdown(
-                f"<div class='skip-box'><b>Isolates with no matching AST row (not included)</b>"
-                f"<ol>{items}</ol></div>", unsafe_allow_html=True)
+            render_callout("Isolates with no matching AST row (not included)", sorted(skipped),
+                           "#5d6e80", "#EAEEF3")
 
         if st.session_state.get('bad'):
             for b in st.session_state['bad']:
@@ -787,50 +811,58 @@ with tab2:
 
         st.write("")
 
-        # ---- Resistance profile (one sleek sorted 100% stacked bar, n shown inline) ----
+        # ---- Resistance profile, split by Gram stain ----
         sir_cols = [c for c in CANON_ABBREVS if c in df.columns and df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
-            long = df[["Isolate"] + sir_cols].melt(id_vars="Isolate", var_name="ABx", value_name="Res")
-            long = long[long["Res"].isin(["S", "I", "R"])]
-            long["Res"] = long["Res"].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
-            ct = long.groupby(['ABx', 'Res']).size().unstack(fill_value=0)
-            for c in ['Resistant', 'Intermediate', 'Susceptible']:
-                if c not in ct.columns:
-                    ct[c] = 0
-            ct['n'] = ct[['Resistant', 'Intermediate', 'Susceptible']].sum(axis=1)
-            ct = ct[ct['n'] > 0]
-            pct = ct[['Resistant', 'Intermediate', 'Susceptible']].div(ct['n'], axis=0) * 100
-            order_cats = pct['Resistant'].sort_values(ascending=True).index.tolist()
-            labels = [f"{a}  ·  n={int(ct.loc[a, 'n'])}" for a in order_cats]
+            long_all = df[["Isolate", "Gram Stain"] + sir_cols].melt(
+                id_vars=["Isolate", "Gram Stain"], var_name="ABx", value_name="Res")
+            long_all = long_all[long_all["Res"].isin(["S", "I", "R"])]
+            long_all["Res"] = long_all["Res"].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
 
-            # Which organisms sit behind each (antibiotic, result) cell, for the hover.
-            org_map = {}
-            for (a, r), grp in long.groupby(['ABx', 'Res'])['Isolate']:
-                vc = grp.value_counts()
-                org_map[(a, r)] = "<br>".join(f"{name} ×{c}" if c > 1 else name for name, c in vc.items())
-
-            with st.container(border=True):
-                section("Resistance profile by antibiotic",
-                        "Each bar is 100% of the isolates tested for that drug, split into S / I / R and sorted by resistance. "
-                        "n = number of isolates tested (small n = interpret with caution). Hover a segment to see which organisms it is.")
-                figR = go.Figure()
+            def resistance_figure(long_sub):
+                ct = long_sub.groupby(['ABx', 'Res']).size().unstack(fill_value=0)
+                for c in ['Resistant', 'Intermediate', 'Susceptible']:
+                    if c not in ct.columns:
+                        ct[c] = 0
+                ct['n'] = ct[['Resistant', 'Intermediate', 'Susceptible']].sum(axis=1)
+                ct = ct[ct['n'] > 0]
+                if ct.empty:
+                    return None
+                pct = ct[['Resistant', 'Intermediate', 'Susceptible']].div(ct['n'], axis=0) * 100
+                order_cats = pct['Resistant'].sort_values(ascending=True).index.tolist()
+                labels = [f"{a}  ·  n={int(ct.loc[a, 'n'])}" for a in order_cats]
+                org_map = {}
+                for (a, r), grp in long_sub.groupby(['ABx', 'Res'])['Isolate']:
+                    vc = grp.value_counts()
+                    org_map[(a, r)] = "<br>".join(f"{name} ×{c}" if c > 1 else name for name, c in vc.items())
+                fig = go.Figure()
                 for res in ["Resistant", "Intermediate", "Susceptible"]:
                     cdata = [[int(ct.loc[a, res]), org_map.get((a, res), "")] for a in order_cats]
-                    figR.add_bar(orientation="h", y=labels,
+                    fig.add_bar(orientation="h", y=labels,
                         x=[round(pct.loc[a, res], 1) for a in order_cats], name=res,
                         marker_color=SIR_CMAP[res], marker_line=dict(color="white", width=1),
                         customdata=cdata,
                         hovertemplate="<b>%{y}</b><br>" + res + ": %{x:.0f}% (%{customdata[0]} isolates)"
                                       "<br>%{customdata[1]}<extra></extra>")
-                style_fig(figR, max(420, 27 * len(order_cats)), bottom=40)
-                figR.update_layout(barmode="stack",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0, title="",
-                                font=dict(size=14)),
+                style_fig(fig, max(300, 27 * len(order_cats) + 70), bottom=40)
+                fig.update_layout(barmode="stack",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title="", font=dict(size=14)),
                     xaxis_title="<b>Percentage of isolates tested (%)</b>", yaxis_title="")
-                figR.update_xaxes(range=[0, 100], ticksuffix="%")
-                st.plotly_chart(figR, use_container_width=True)
+                fig.update_xaxes(range=[0, 100], ticksuffix="%")
+                return fig
 
-            st.write("")
+            for gram_label, gram_val in [("Gram-positive", "Positive"), ("Gram-negative", "Negative")]:
+                with st.container(border=True):
+                    section(f"Resistance profile by antibiotic — {gram_label}",
+                            "Each bar is 100% of the isolates tested for that drug, split into S / I / R and sorted by "
+                            "resistance. n = number of isolates tested (small n = interpret with caution). "
+                            "Hover a segment to see which organisms it is.")
+                    fig_g = resistance_figure(long_all[long_all["Gram Stain"] == gram_val])
+                    if fig_g is None:
+                        st.info(f"No {gram_label.lower()} susceptibility results yet.")
+                    else:
+                        st.plotly_chart(fig_g, use_container_width=True)
+                st.write("")
 
         # ---- Sample site (horizontal, sorted, labelled) ----
         with st.container(border=True):
