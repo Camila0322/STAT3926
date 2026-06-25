@@ -9,7 +9,7 @@ import base64
 import openpyxl
 import plotly.express as px
 import plotly.graph_objects as go
-from openpyxl.styles import PatternFill
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from datetime import datetime, timedelta, timezone
 
 # ============================================================================
@@ -565,7 +565,8 @@ def build_dataframe(pdf_records, ast_lookup):
     # If any antibiotic differs, both rows are kept.
     if not df.empty:
         df = df.drop_duplicates(subset=["Lab Reference", "Isolate"] + CANON_ABBREVS,
-                                keep="first").reset_index(drop=True)
+                                keep="first")
+        df = df.sort_values(["Lab Reference", "Isolate"]).reset_index(drop=True)
     return df, skipped
 
 
@@ -575,10 +576,29 @@ def build_excel(df):
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
         styled.to_excel(writer, index=False, sheet_name="AMR Surveillance")
         ws = writer.sheets["AMR Surveillance"]
+
+        header_font = Font(bold=True, color="103A6B", size=11)
+        header_border = Border(bottom=Side(style="medium", color="103A6B"))
+        n_rows = ws.max_row
+
         for col_num, col_name in enumerate(df.columns, 1):
-            if col_name in ABX_HEADER_COLORS:
-                fill = ABX_HEADER_COLORS[col_name]
-                ws.cell(1, col_num).fill = PatternFill(start_color=fill, end_color=fill, fill_type="solid")
+            cell = ws.cell(1, col_num)
+            cell.font = header_font
+            cell.border = header_border
+            is_abx = col_name in CANON_ABBREVS
+            cell.alignment = Alignment(horizontal="center" if is_abx else "left", vertical="center")
+            letter = cell.column_letter
+            if is_abx:
+                ws.column_dimensions[letter].width = 8
+                for row_num in range(2, n_rows + 1):
+                    ws.cell(row_num, col_num).alignment = Alignment(horizontal="center")
+            else:
+                vals = [str(col_name)] + [str(v) for v in df[col_name].tolist()]
+                ws.column_dimensions[letter].width = min(max(max(len(x) for x in vals) + 2, 10), 34)
+
+        ws.row_dimensions[1].height = 22
+        # Keep the case identifiers and organism visible while scrolling the antibiotics.
+        ws.freeze_panes = "O2"
     return buf.getvalue()
 
 
@@ -640,15 +660,31 @@ with tab1:
         else:
             ast_lookup = build_ast_lookup(ast_file)
             pdf_records, bad = [], []
+            cp_files = {}
             total = len(pdf_files)
             pb = st.progress(0.0, text=f"Reading reports (0/{total})…")
             for i, f in enumerate(pdf_files):
                 pb.progress(i / total, text=f"Reading ({i + 1}/{total}): {f.name}")
                 try:
-                    pdf_records.extend(parse_pdf_metadata(f))
+                    recs = parse_pdf_metadata(f)
+                    for cp in {r["_cp_key"] for r in recs if r["_cp_key"]}:
+                        cp_files.setdefault(cp, []).append(f.name)
+                    pdf_records.extend(recs)
                 except Exception as e:
                     bad.append(f"{f.name}: {e}")
             pb.progress(1.0, text="Done")
+
+            # Flag duplicate uploads: same report (CP) seen in more than one file,
+            # or the same file name uploaded more than once.
+            dupes = []
+            for cp, files in sorted(cp_files.items()):
+                if len(files) > 1:
+                    dupes.append(f"CP {cp} appears in {len(files)} uploaded files "
+                                 f"({', '.join(sorted(set(files)))})")
+            names = [f.name for f in pdf_files]
+            for n in sorted({x for x in names if names.count(x) > 1}):
+                if not any(n in fs and len(fs) > 1 for fs in cp_files.values()):
+                    dupes.append(f"File uploaded more than once: {n}")
 
             final_df, skipped = build_dataframe(pdf_records, ast_lookup)
 
@@ -658,9 +694,15 @@ with tab1:
                 st.session_state['processed_data'] = final_df
                 st.session_state['skipped'] = skipped
                 st.session_state['bad'] = bad
+                st.session_state['dupes'] = dupes
 
     if 'processed_data' in st.session_state:
         final_df = st.session_state['processed_data']
+
+        if st.session_state.get('dupes'):
+            msg = "  \n".join(f"- {d}" for d in st.session_state['dupes'])
+            st.warning("Possible duplicate uploads detected:  \n" + msg)
+
         with st.container(border=True):
             section("Master dataset")
             preview = final_df.copy()
@@ -670,13 +712,6 @@ with tab1:
             fname = f"AMR_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
             st.download_button("Download master Excel", build_excel(final_df), fname,
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-        skipped = st.session_state.get('skipped')
-        if skipped:
-            items = "".join(f"<li>{s}</li>" for s in skipped)
-            st.markdown(
-                f"<div class='skip-box'><b>Isolates with no matching AST row (not included)</b>"
-                f"<ol>{items}</ol></div>", unsafe_allow_html=True)
 
         # Build grouped review lists from the final table.
         typo_map, intr_map = {}, {}
@@ -689,19 +724,29 @@ with tab1:
                 elif v not in ("S", "I", "R", "INTR", "NA", "", None) and not (isinstance(v, float) and pd.isna(v)):
                     typo_map.setdefault(key, []).append(f"{abx} = {v}")
 
+        # 1) Unexpected antibiotic values (likely typos)
         if typo_map:
-            items = "".join(f"<li>{k} ({', '.join(vs)})</li>" for k, vs in typo_map.items())
+            items = "".join(f"<li>{k} ({', '.join(vs)})</li>" for k, vs in sorted(typo_map.items()))
             st.markdown(
                 f"<div class='skip-box' style='border-left-color:#FF2D2D;'>"
                 f"<b>Isolates to check (unexpected antibiotic values)</b><ol>{items}</ol></div>",
                 unsafe_allow_html=True)
 
+        # 2) Intrinsic results
         if intr_map:
-            items = "".join(f"<li>{k} ({', '.join(vs)})</li>" for k, vs in intr_map.items())
+            items = "".join(f"<li>{k} ({', '.join(vs)})</li>" for k, vs in sorted(intr_map.items()))
             st.markdown(
                 f"<div class='skip-box' style='border-left-color:#BFE3F7;'>"
                 f"<b>Isolates with intrinsic results (INTR)</b><ol>{items}</ol></div>",
                 unsafe_allow_html=True)
+
+        # 3) Isolates with no matching AST row
+        skipped = st.session_state.get('skipped')
+        if skipped:
+            items = "".join(f"<li>{s}</li>" for s in sorted(skipped))
+            st.markdown(
+                f"<div class='skip-box'><b>Isolates with no matching AST row (not included)</b>"
+                f"<ol>{items}</ol></div>", unsafe_allow_html=True)
 
         if st.session_state.get('bad'):
             for b in st.session_state['bad']:
