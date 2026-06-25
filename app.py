@@ -93,6 +93,13 @@ st.markdown(f"""
         background:{WHITE}; border:1px solid {LINE} !important; border-radius:16px;
         box-shadow:0 4px 18px rgba(14,28,43,0.06); padding:1.2rem 1.4rem;
     }}
+    /* No nested block inside a card may draw its own border/background/shadow,
+       otherwise Streamlit's own container border shows as a second box. */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"],
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] {{
+        border:none !important; background:transparent !important;
+        box-shadow:none !important; padding:0 !important;
+    }}
 
     /* ---------- Buttons ---------- */
     .stButton>button {{
@@ -477,9 +484,14 @@ def build_ast_lookup(file_object):
             if not cp_key or not iso:
                 continue
             key = (cp_key, str(iso).strip().lower())
+            maldi_raw = row[AST_MALDI_SCORE_COL] if AST_MALDI_SCORE_COL < len(row) else None
+            try:
+                maldi_val = f"{float(maldi_raw):.2f}" if maldi_raw not in (None, "") else "NA"
+            except (ValueError, TypeError):
+                maldi_val = str(maldi_raw)
             entry = {
                 "Clinic": row[AST_CLINIC_COL] if AST_CLINIC_COL < len(row) and row[AST_CLINIC_COL] is not None else "NA",
-                "MALDI Score": row[AST_MALDI_SCORE_COL] if AST_MALDI_SCORE_COL < len(row) and row[AST_MALDI_SCORE_COL] is not None else "NA",
+                "MALDI Score": maldi_val,
             }
             for abx in CANON_ABBREVS:
                 mi, si = meas_cols[abx], sir_cols[abx]
