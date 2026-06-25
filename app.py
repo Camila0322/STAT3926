@@ -216,12 +216,51 @@ PDF_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity", "Isolate",
 ]
-# Final column order. Clinic and MALDI Score come from the AST sheet.
+# Final column order. Clinic, MALDI Score and Gram Stain are derived/AST fields.
 OUTPUT_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Clinic", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity",
-    "Isolate", "MALDI Score",
+    "Isolate", "Gram Stain", "MALDI Score",
 ] + CANON_ABBREVS
+
+# Gram status by genus (the first word of the isolate name). Lowercase keys.
+# Unknown genera return "NA" so they show up and the lists can be extended.
+GRAM_POSITIVE_GENERA = {
+    "staphylococcus", "mammaliicoccus", "streptococcus", "enterococcus", "lactococcus",
+    "aerococcus", "gemella", "micrococcus", "kocuria", "rothia", "listeria", "bacillus",
+    "lysinibacillus", "paenibacillus", "clostridium", "clostridioides", "corynebacterium",
+    "rhodococcus", "arcanobacterium", "trueperella", "actinomyces", "nocardia", "erysipelothrix",
+    "lactobacillus", "lactiplantibacillus", "limosilactobacillus", "ligilactobacillus",
+    "peptostreptococcus", "finegoldia", "anaerococcus", "peptoniphilus", "cutibacterium",
+    "propionibacterium", "mycobacterium", "dermatophilus", "globicatella", "facklamia",
+    "weissella", "leuconostoc", "pediococcus", "vagococcus", "helcococcus",
+}
+GRAM_NEGATIVE_GENERA = {
+    "escherichia", "klebsiella", "enterobacter", "citrobacter", "proteus", "providencia",
+    "morganella", "serratia", "salmonella", "shigella", "yersinia", "pantoea", "cronobacter",
+    "raoultella", "lelliottia", "kluyvera", "pluralibacter", "hafnia", "edwardsiella",
+    "pseudomonas", "stenotrophomonas", "acinetobacter", "burkholderia", "achromobacter",
+    "alcaligenes", "comamonas", "sphingomonas", "ochrobactrum", "brevundimonas",
+    "pasteurella", "mannheimia", "bibersteinia", "histophilus", "actinobacillus",
+    "haemophilus", "avibacterium", "gallibacterium", "bordetella", "moraxella", "neisseria",
+    "brucella", "bartonella", "francisella", "taylorella", "campylobacter", "helicobacter",
+    "arcobacter", "vibrio", "aeromonas", "plesiomonas", "bacteroides", "fusobacterium",
+    "prevotella", "porphyromonas", "dichelobacter", "chryseobacterium", "elizabethkingia",
+    "flavobacterium", "capnocytophaga", "ornithobacterium", "riemerella", "leptospira",
+    "wohlfahrtiimonas", "lonepinella", "phocoenobacter",
+}
+
+
+def gram_status(isolate):
+    """Classify an isolate as Gram Positive/Negative from its genus (first word)."""
+    if not isolate or str(isolate).strip() in ("NA", "nan", "Na", ""):
+        return "NA"
+    genus = str(isolate).strip().split()[0].strip(".,;:").lower()
+    if genus in GRAM_POSITIVE_GENERA:
+        return "Positive"
+    if genus in GRAM_NEGATIVE_GENERA:
+        return "Negative"
+    return "NA"
 
 GREEN = "FFC6EFCE"; YELLOW = "FFFFEB9C"; RED = "FFFFC7CE"
 ABX_HEADER_COLORS = {
@@ -246,7 +285,7 @@ def cell_css(v):
     if v == "R":
         return "background-color: #FFC7CE"
     if v == "INTR":
-        return "background-color: #DCE1E8"
+        return "background-color: #BFE3F7"
     if v is None or v == "" or v == "NA" or (isinstance(v, float) and pd.isna(v)):
         return ""
     # Unexpected value (typo / bad entry): flag loudly.
@@ -447,7 +486,7 @@ AST_MALDI_SCORE_COL = 11
 
 def resolve_cell(meas, sir):
     """Resolve one antibiotic cell from its (measurement, S/I/R) pair.
-    If the measurement cell reads INTR (intrinsic resistance), record INTR.
+    If the measurement cell reads INTR (intrinsic), record INTR.
     Otherwise take the S/I/R interpretation. Unexpected text is kept verbatim
     so the styler can flag it as a likely typo."""
     if meas is not None and str(meas).strip().upper() == "INTR":
@@ -516,6 +555,7 @@ def build_dataframe(pdf_records, ast_lookup):
         vals = ast_lookup[key]
         merged = {col: rec[col] for col in PDF_COLUMNS}
         merged["Clinic"] = vals.get("Clinic", "NA")
+        merged["Gram Stain"] = gram_status(rec["Isolate"])
         merged["MALDI Score"] = vals.get("MALDI Score", "NA")
         for abx in CANON_ABBREVS:
             merged[abx] = vals.get(abx, "NA")
@@ -560,8 +600,8 @@ with st.sidebar:
         f"<span class='legend-chip' style='background:#C6EFCE;'></span>Susceptible (S)<br>"
         f"<span class='legend-chip' style='background:#FFEB9C;'></span>Intermediate (I)<br>"
         f"<span class='legend-chip' style='background:#FFC7CE;'></span>Resistant (R)<br>"
-        f"<span class='legend-chip' style='background:#DCE1E8;'></span>Intrinsic resistance (INTR)<br>"
-        f"<span class='legend-chip' style='background:#FF2D2D;'></span>Check entry (unexpected value)",
+        f"<span class='legend-chip' style='background:#BFE3F7;'></span>Intrinsic (INTR)<br>"
+        f"<span class='legend-chip' style='background:#FF2D2D;'></span>Check entry",
         unsafe_allow_html=True)
 
 # ============================================================================
@@ -637,6 +677,32 @@ with tab1:
             st.markdown(
                 f"<div class='skip-box'><b>Isolates with no matching AST row (not included)</b>"
                 f"<ol>{items}</ol></div>", unsafe_allow_html=True)
+
+        # Build grouped review lists from the final table.
+        typo_map, intr_map = {}, {}
+        for _, r in final_df.iterrows():
+            key = f'{r["Lab Reference"]}: {r["Isolate"]}'
+            for abx in CANON_ABBREVS:
+                v = r[abx]
+                if v == "INTR":
+                    intr_map.setdefault(key, []).append(abx)
+                elif v not in ("S", "I", "R", "INTR", "NA", "", None) and not (isinstance(v, float) and pd.isna(v)):
+                    typo_map.setdefault(key, []).append(f"{abx} = {v}")
+
+        if typo_map:
+            items = "".join(f"<li>{k} ({', '.join(vs)})</li>" for k, vs in typo_map.items())
+            st.markdown(
+                f"<div class='skip-box' style='border-left-color:#FF2D2D;'>"
+                f"<b>Isolates to check (unexpected antibiotic values)</b><ol>{items}</ol></div>",
+                unsafe_allow_html=True)
+
+        if intr_map:
+            items = "".join(f"<li>{k} ({', '.join(vs)})</li>" for k, vs in intr_map.items())
+            st.markdown(
+                f"<div class='skip-box' style='border-left-color:#BFE3F7;'>"
+                f"<b>Isolates with intrinsic results (INTR)</b><ol>{items}</ol></div>",
+                unsafe_allow_html=True)
+
         if st.session_state.get('bad'):
             for b in st.session_state['bad']:
                 st.error(b)
