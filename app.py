@@ -680,10 +680,10 @@ with tab2:
         # ---- Resistance profile (one sleek sorted 100% stacked bar, n shown inline) ----
         sir_cols = [c for c in CANON_ABBREVS if c in df.columns and df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
-            melted = df[sir_cols].melt(var_name="ABx", value_name="Res")
-            melted = melted[melted["Res"].isin(["S", "I", "R"])]
-            melted['Res'] = melted['Res'].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
-            ct = melted.groupby(['ABx', 'Res']).size().unstack(fill_value=0)
+            long = df[["Isolate"] + sir_cols].melt(id_vars="Isolate", var_name="ABx", value_name="Res")
+            long = long[long["Res"].isin(["S", "I", "R"])]
+            long["Res"] = long["Res"].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
+            ct = long.groupby(['ABx', 'Res']).size().unstack(fill_value=0)
             for c in ['Resistant', 'Intermediate', 'Susceptible']:
                 if c not in ct.columns:
                     ct[c] = 0
@@ -693,17 +693,25 @@ with tab2:
             order_cats = pct['Resistant'].sort_values(ascending=True).index.tolist()
             labels = [f"{a}  ·  n={int(ct.loc[a, 'n'])}" for a in order_cats]
 
+            # Which organisms sit behind each (antibiotic, result) cell, for the hover.
+            org_map = {}
+            for (a, r), grp in long.groupby(['ABx', 'Res'])['Isolate']:
+                vc = grp.value_counts()
+                org_map[(a, r)] = "<br>".join(f"{name} ×{c}" if c > 1 else name for name, c in vc.items())
+
             with st.container(border=True):
                 section("Resistance profile by antibiotic",
                         "Each bar is 100% of the isolates tested for that drug, split into S / I / R and sorted by resistance. "
-                        "n = number of isolates tested (small n = interpret with caution).")
+                        "n = number of isolates tested (small n = interpret with caution). Hover a segment to see which organisms it is.")
                 figR = go.Figure()
                 for res in ["Resistant", "Intermediate", "Susceptible"]:
+                    cdata = [[int(ct.loc[a, res]), org_map.get((a, res), "")] for a in order_cats]
                     figR.add_bar(orientation="h", y=labels,
                         x=[round(pct.loc[a, res], 1) for a in order_cats], name=res,
                         marker_color=SIR_CMAP[res], marker_line=dict(color="white", width=1),
-                        customdata=[int(ct.loc[a, res]) for a in order_cats],
-                        hovertemplate="<b>%{y}</b><br>" + res + ": %{x:.0f}% (%{customdata} isolates)<extra></extra>")
+                        customdata=cdata,
+                        hovertemplate="<b>%{y}</b><br>" + res + ": %{x:.0f}% (%{customdata[0]} isolates)"
+                                      "<br>%{customdata[1]}<extra></extra>")
                 style_fig(figR, max(420, 27 * len(order_cats)), bottom=40)
                 figR.update_layout(barmode="stack",
                     legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0, title="",
