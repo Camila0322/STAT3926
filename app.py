@@ -137,7 +137,8 @@ st.markdown(f"""
         border-radius:14px; padding:1.25rem 1.45rem; box-shadow:0 3px 12px rgba(14,28,43,0.05);
     }}
     [data-testid="stMetricValue"] {{ color:{BLUE_700}; font-weight:900; font-size:2.7rem; }}
-    [data-testid="stMetricLabel"] {{ color:{MUTED}; font-weight:600; font-size:1.02rem; }}
+    [data-testid="stMetricLabel"] {{ color:{MUTED}; font-weight:700; font-size:1.25rem; }}
+    [data-testid="stMetricLabel"] p {{ font-size:1.25rem; }}
 
     /* ---------- Uploaders (blend into the section card) ---------- */
     [data-testid="stFileUploader"] {{ background:transparent; border:none; padding:0; }}
@@ -545,25 +546,22 @@ def build_excel(df):
 # 9. SIDEBAR
 # ============================================================================
 with st.sidebar:
-    st.markdown(f"<h3 style='margin-bottom:0;color:{BLUE_800};'>USYD · Veterinary Pathology</h3>"
-                f"<p style='color:{MUTED};font-size:0.9rem;margin-top:0.2rem;'>AMR Surveillance Pipeline</p>",
+    st.markdown(f"<h3 style='color:{BLUE_800};font-size:1.3rem;font-weight:800;margin-bottom:0.4rem;'>Workflow</h3>",
                 unsafe_allow_html=True)
-    st.divider()
-    st.markdown("**Workflow**")
     st.markdown(
         "1. Upload the AST LOGGING sheet(s)\n"
         "2. Add the matching PDF report(s)\n"
         "3. Process: match on CP number and isolate\n"
         "4. Download the master sheet")
     st.divider()
-    st.markdown("**Result key**")
+    st.markdown(f"<h3 style='color:{BLUE_800};font-size:1.3rem;font-weight:800;margin-bottom:0.5rem;'>Susceptibility key</h3>",
+                unsafe_allow_html=True)
     st.markdown(
         f"<span class='legend-chip' style='background:#C6EFCE;'></span>Susceptible (S)<br>"
         f"<span class='legend-chip' style='background:#FFEB9C;'></span>Intermediate (I)<br>"
-        f"<span class='legend-chip' style='background:#FFC7CE;'></span>Resistant (R)",
+        f"<span class='legend-chip' style='background:#FFC7CE;'></span>Resistant (R)<br>"
+        f"<span class='legend-chip' style='background:#DCE1E8;'></span>Intrinsic resistance (INTR)",
         unsafe_allow_html=True)
-    st.divider()
-    st.caption("Metadata is read from the PDF report. Antibiotic results are read from the AST sheet.")
 
 # ============================================================================
 # 10. MAIN
