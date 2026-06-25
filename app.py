@@ -560,7 +560,8 @@ with st.sidebar:
         f"<span class='legend-chip' style='background:#C6EFCE;'></span>Susceptible (S)<br>"
         f"<span class='legend-chip' style='background:#FFEB9C;'></span>Intermediate (I)<br>"
         f"<span class='legend-chip' style='background:#FFC7CE;'></span>Resistant (R)<br>"
-        f"<span class='legend-chip' style='background:#DCE1E8;'></span>Intrinsic resistance (INTR)",
+        f"<span class='legend-chip' style='background:#DCE1E8;'></span>Intrinsic resistance (INTR)<br>"
+        f"<span class='legend-chip' style='background:#FF2D2D;'></span>Check entry (unexpected value)",
         unsafe_allow_html=True)
 
 # ============================================================================
