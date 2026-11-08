@@ -188,6 +188,22 @@ PDF_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity", "Isolate",
 ]
+
+# Full antibiotic names as they appear on the PDF report -> AST sheet abbreviation.
+# Used to read the susceptibility table from the report when the AST sheet has no row.
+PDF_ABX_MAP = {
+    "penicillin": "P10", "clindamycin": "CC2", "ticarcillin/clavulanic acid": "TIM85",
+    "ticarcillin": "TIC75", "ampicillin": "AM10", "amoxicillin/clavulanic acid": "AMC30",
+    "amoxicillin/clavulanate": "AMC30", "amikacin": "AN30", "oxacillin": "OX1",
+    "gentamicin": "GM 10", "gentamicin 120": "CN 120", "high level gentamicin": "CN 120",
+    "imipenem": "IPM10", "chloramphenicol": "C30", "trimethoprim/sulpha": "SXT",
+    "trimethoprim/sulphamethoxazole": "SXT", "trimethoprim-sulfamethoxazole": "SXT",
+    "vancomycin": "VA30", "erythromycin": "E15", "cefoxitin": "FOX30", "rifampicin": "RD5",
+    "doxycycline": "DO30", "cefalexin": "CL30", "cephalexin": "CL30", "cefazolin": "CZN 30",
+    "cephazolin": "CZN 30", "ceftazidime": "CAZ30", "neomycin": "N30", "enrofloxacin": "ENR5",
+    "marbofloxacin": "MAR", "fusidic acid": "FA10", "cefovecin": "CVN30", "streptomycin": "S5",
+    "nitrofurantoin": "F/M300",
+}
 OUTPUT_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Clinic", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity",
@@ -335,9 +351,9 @@ def clean_isolate_name(name):
     if name is None or (isinstance(name, float) and pd.isna(name)):
         return "NA"
     name = str(name)
-    name = re.sub(r'^\d+[\.\)]\s*', '', name)
+    name = re.sub(r'^\d+\s*[\.\)]\s*', '', name)
     name = re.sub(r'^(?:Heavy|Moderate|Light|Scanty|Profuse|Abundant|Mixed)\s*growth\s*(?:of\s*)?(?:[-–—]\s*)?', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'^\d+[\.\)]\s*', '', name)
+    name = re.sub(r'^\d+\s*[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
     name = " ".join(name.split()).capitalize()
     if not name:
@@ -395,12 +411,98 @@ def clean_site(raw):
 
 
 # ============================================================================
-# 6. PDF METADATA EXTRACTION  (everything except antibiotic results)
+# 6. PDF METADATA + SUSCEPTIBILITY EXTRACTION
 # ============================================================================
+def _parse_susc_table(table):
+    """Read a report's susceptibility grid: rows of (name, S/I/R) pairs."""
+    res = {}
+    for row in table:
+        for i in range(0, len(row) - 1, 2):
+            name = re.sub(r'\s+', ' ', (row[i] or "").strip().lower())
+            letter = (row[i + 1] or "").strip().upper()
+            abbr = PDF_ABX_MAP.get(name)
+            if abbr and letter in ("S", "I", "R"):
+                res.setdefault(abbr, letter)
+    return res
+
+
+def _susc_organism(text):
+    """True organism heading (2-3 words, known genus) for associating a table."""
+    c = clean_isolate_name(text)
+    if c == "NA":
+        return None
+    toks = c.split()
+    if not toks or len(toks) > 3:
+        return None
+    genus = toks[0].lower().strip(".,;:")
+    if genus in GRAM_POSITIVE_GENERA or genus in GRAM_NEGATIVE_GENERA:
+        return c.lower()
+    return None
+
+
+def _extract_susceptibility(pdf):
+    """Map organism (full name or genus) -> {abbrev: S/I/R} from the report tables,
+    associating each susceptibility table with the nearest organism heading above it."""
+    import bisect
+    orgs, tables = [], []
+    for pi, page in enumerate(pdf.pages):
+        base = pi * 1000000
+        try:
+            for ln in page.extract_text_lines():
+                og = _susc_organism(ln.get("text", "").strip())
+                if og:
+                    orgs.append((base + ln["top"], og))
+        except Exception:
+            pass
+        try:
+            for w in page.extract_words():  # genus-only heading (italic species often drops out)
+                t = w["text"].strip()
+                if len(t) >= 5 and t[:1].isupper() and t.isalpha():
+                    g = t.lower()
+                    if g in GRAM_POSITIVE_GENERA or g in GRAM_NEGATIVE_GENERA:
+                        orgs.append((base + w["top"] + 0.1, g))
+        except Exception:
+            pass
+        try:
+            for tb in sorted(page.find_tables(), key=lambda t: t.bbox[1]):
+                res = _parse_susc_table(tb.extract())
+                if res:
+                    tables.append((base + tb.bbox[1], res))
+        except Exception:
+            pass
+    orgs.sort(key=lambda x: x[0])
+    order_keys = [o for o, _ in orgs]
+    susc = {}
+    for torder, res in tables:
+        i = bisect.bisect_left(order_keys, torder) - 1  # nearest organism above the table
+        if i >= 0:
+            iso = orgs[i][1]
+            d = susc.setdefault(iso, {})
+            for k, v in res.items():
+                d.setdefault(k, v)
+    return susc
+
+
+def susc_for(iso_key, susc):
+    """Look up a record's susceptibility by full name, then by genus as a fallback."""
+    if not susc:
+        return {}
+    if iso_key in susc:
+        return susc[iso_key]
+    genus = iso_key.split()[0] if iso_key else ""
+    if genus in susc:
+        return susc[genus]
+    cand = [k for k in susc if k.split() and k.split()[0] == genus]
+    if len(cand) == 1:
+        return susc[cand[0]]
+    return {}
+
+
 def parse_pdf_metadata(file_object):
     records = []
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join((page.extract_text() or "") + "\n" for page in pdf.pages)
+        susc = _extract_susceptibility(pdf)
 
     cp_key = normalize_cp(re.search(r'Our Ref:\s*(?:CP\s*)?(\d{2}-\d{4,5})', raw_text, re.IGNORECASE))
     lab_ref_val = f"CP {cp_key}" if cp_key else "NA"
@@ -475,6 +577,8 @@ def parse_pdf_metadata(file_object):
                 "_cp_key": cp_key,
                 "_isolate_key": iso_clean.strip().lower(),
             })
+    for rec in records:
+        rec["_susc"] = susc_for(rec["_isolate_key"], susc)
     return records
 
 
@@ -622,8 +726,9 @@ def build_dataframe(pdf_records, ast_lookup):
                 not_in_sheet.append(label)
             merged["Clinic"] = "NA"
             merged["MALDI Score"] = "NA"
+            rec_susc = rec.get("_susc", {})
             for abx in CANON_ABBREVS:
-                merged[abx] = "NA"
+                merged[abx] = rec_susc.get(abx, "NA")  # fall back to the report's own susceptibility
         rows.append(merged)
     df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
     if not df.empty:
@@ -650,8 +755,9 @@ def build_from_pdf_only(pdf_files):
         merged["Clinic"] = "NA"
         merged["Gram Stain"] = gram_status(rec["Isolate"])
         merged["MALDI Score"] = "NA"
+        rec_susc = rec.get("_susc", {})
         for abx in CANON_ABBREVS:
-            merged[abx] = "NA"
+            merged[abx] = rec_susc.get(abx, "NA")  # susceptibility read from the report
         rows.append(merged)
     df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
     if not df.empty:
@@ -818,9 +924,10 @@ with tab1:
 
         mode_msg = {
             "matched": "Reports cross-checked against the AST sheet, matched on CP number and isolate. "
-                       "Susceptibility, clinic and MALDI come from the sheet.",
-            "pdf": "Built from the PDF reports only. Susceptibility results need the AST logging sheet, "
-                   "so the antibiotic columns are blank.",
+                       "Matched isolates take susceptibility, clinic and MALDI from the sheet; any report "
+                       "not in the sheet keeps the susceptibility read from the report itself.",
+            "pdf": "Built from the PDF reports only. Susceptibility is read from each report's own "
+                   "susceptibility table; clinic and MALDI are not in the reports.",
         }.get(mode, "")
         if mode_msg:
             st.markdown(f"<div class='mode-note'>{mode_msg}</div>", unsafe_allow_html=True)
@@ -864,12 +971,12 @@ with tab1:
 
         name_diff = st.session_state.get('name_diff')
         if name_diff:
-            render_callout("CP is in the sheet but the isolate name differs (kept, no susceptibility; check naming)",
+            render_callout("CP is in the sheet but the isolate name differs (susceptibility from the report; check naming)",
                            sorted(name_diff), "#d99000", "#FBF1D6", ordered=False)
 
         skipped = st.session_state.get('skipped')
         if skipped:
-            render_callout("Reports not yet in the AST sheet (kept, susceptibility blank for now)", sorted(skipped),
+            render_callout("Reports not yet in the AST sheet (susceptibility read from the report)", sorted(skipped),
                            "#6c6b6a", "#EEEAE6", ordered=False)
 
         if st.session_state.get('bad'):
