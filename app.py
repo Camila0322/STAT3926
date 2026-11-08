@@ -340,7 +340,17 @@ def clean_isolate_name(name):
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
     name = re.sub(r'^[-–—\s]+', '', name)
     name = " ".join(name.split()).capitalize()
-    return name if name else "NA"
+    if not name:
+        return "NA"
+    # Drop non-organism descriptors that the text matchers can pick up.
+    NON_ORGANISM = {
+        "gram positive", "gram negative", "gram positive cocci", "gram negative rods",
+        "gram variable", "no growth", "no significant growth", "no bacterial growth",
+        "mixed growth", "mixed culture", "contaminant", "normal flora", "skin flora",
+    }
+    if name.lower() in NON_ORGANISM:
+        return "NA"
+    return name
 
 
 def cell_or_na(row, idx):
@@ -522,6 +532,7 @@ def build_ast_lookup(file_object):
             entry = {
                 "Clinic": row[AST_CLINIC_COL] if AST_CLINIC_COL < len(row) and row[AST_CLINIC_COL] is not None else "NA",
                 "MALDI Score": maldi_val,
+                "IsolateRaw": str(iso).strip(),
                 # Sheet-side metadata, kept for cross-checking against the report.
                 "Species": cell_or_na(row, AST_SPECIES_COL),
                 "Breed": cell_or_na(row, AST_BREED_COL),
@@ -541,20 +552,37 @@ def build_ast_lookup(file_object):
 
 # Fields present in both the report and the AST sheet, compared to flag mismatches.
 CROSS_FIELDS = ["Species", "Breed", "Sex", "Neutered", "Sample Type", "Site"]
+# Free-text fields where a truncation or abbreviation is not a real conflict
+# (e.g. "Labrador" vs "Labrador Retriever", "Ventral" vs "Ventral interdigital paws").
+FUZZY_FIELDS = {"Breed", "Site", "Sample Type"}
 
 
 def _norm_val(v):
     return re.sub(r'\s+', ' ', str(v)).strip().upper()
 
 
+def _tokens(v):
+    return set(re.sub(r'[^A-Z0-9 ]', ' ', _norm_val(v)).split())
+
+
+def _values_agree(field, pv, av):
+    if _norm_val(pv) == _norm_val(av):
+        return True
+    if field in FUZZY_FIELDS:
+        tp, ta = _tokens(pv), _tokens(av)
+        if tp and ta and (tp <= ta or ta <= tp):  # one is a subset of the other
+            return True
+    return False
+
+
 def cross_check(rec, vals):
-    """Return a list of 'Field (report: x, sheet: y)' for fields that disagree."""
+    """Return a list of 'Field (report: x, sheet: y)' for fields that genuinely disagree."""
     diffs = []
     for field in CROSS_FIELDS:
         pv, av = rec.get(field, "NA"), vals.get(field, "NA")
         if _norm_val(pv) in ("NA", "N/A", "") or _norm_val(av) in ("NA", "N/A", ""):
             continue
-        if _norm_val(pv) != _norm_val(av):
+        if not _values_agree(field, pv, av):
             diffs.append(f"{field} (report: {pv}, sheet: {av})")
     return diffs
 
@@ -563,28 +591,45 @@ def cross_check(rec, vals):
 # 8. MERGE (PDF metadata + AST antibiotics, with cross-check)
 # ============================================================================
 def build_dataframe(pdf_records, ast_lookup):
-    rows, skipped, discrepancies = [], [], []
+    # What CPs / isolate names does the sheet actually contain?
+    cp_isos = {}
+    for (cp, _iso), entry in ast_lookup.items():
+        cp_isos.setdefault(cp, set()).add(entry.get("IsolateRaw", _iso))
+    cp_set = set(cp_isos)
+
+    rows, not_in_sheet, name_diff, discrepancies = [], [], [], []
     for rec in pdf_records:
         key = (rec["_cp_key"], rec["_isolate_key"])
-        if key not in ast_lookup:
-            skipped.append(f'{rec["Lab Reference"]}: {rec["Isolate"]}')
-            continue
-        vals = ast_lookup[key]
-        diffs = cross_check(rec, vals)
-        if diffs:
-            discrepancies.append(f'{rec["Lab Reference"]}: {rec["Isolate"]} — ' + "; ".join(diffs))
         merged = {col: rec[col] for col in PDF_COLUMNS}
-        merged["Clinic"] = vals.get("Clinic", "NA")
         merged["Gram Stain"] = gram_status(rec["Isolate"])
-        merged["MALDI Score"] = vals.get("MALDI Score", "NA")
-        for abx in CANON_ABBREVS:
-            merged[abx] = vals.get(abx, "NA")
+        if key in ast_lookup:
+            # Matched: pull in susceptibility + clinic + MALDI and cross-check.
+            vals = ast_lookup[key]
+            diffs = cross_check(rec, vals)
+            if diffs:
+                discrepancies.append(f'{rec["Lab Reference"]}: {rec["Isolate"]} — ' + "; ".join(diffs))
+            merged["Clinic"] = vals.get("Clinic", "NA")
+            merged["MALDI Score"] = vals.get("MALDI Score", "NA")
+            for abx in CANON_ABBREVS:
+                merged[abx] = vals.get(abx, "NA")
+        else:
+            # Unmatched: keep the report in the master with blank susceptibility, and flag it.
+            label = f'{rec["Lab Reference"]}: {rec["Isolate"]}'
+            if rec["_cp_key"] in cp_set:
+                sheet_has = ", ".join(sorted(cp_isos.get(rec["_cp_key"], set())))
+                name_diff.append(f'{label} (sheet has: {sheet_has})')
+            else:
+                not_in_sheet.append(label)
+            merged["Clinic"] = "NA"
+            merged["MALDI Score"] = "NA"
+            for abx in CANON_ABBREVS:
+                merged[abx] = "NA"
         rows.append(merged)
     df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
     if not df.empty:
         df = df.drop_duplicates(subset=["Lab Reference", "Isolate"] + CANON_ABBREVS, keep="first")
         df = df.sort_values(["Lab Reference", "Isolate"]).reset_index(drop=True)
-    return df, skipped, discrepancies
+    return df, not_in_sheet, name_diff, discrepancies
 
 
 def build_from_pdf_only(pdf_files):
@@ -751,12 +796,12 @@ with tab1:
             if ast_file:
                 # ---- Reports cross-checked against the AST sheet ----
                 ast_lookup = build_ast_lookup(ast_file)
-                final_df, skipped, discrepancies = build_dataframe(pdf_records, ast_lookup)
+                final_df, not_in_sheet, name_diff, discrepancies = build_dataframe(pdf_records, ast_lookup)
                 if final_df.empty:
                     st.warning("No isolates matched between the PDF(s) and the AST sheet. Check the CP numbers and isolate names line up.")
                 else:
-                    st.session_state.update(processed_data=final_df, skipped=skipped, bad=bad,
-                                            dupes=dupes, discrepancies=discrepancies, mode="matched")
+                    st.session_state.update(processed_data=final_df, skipped=not_in_sheet, name_diff=name_diff,
+                                            bad=bad, dupes=dupes, discrepancies=discrepancies, mode="matched")
             else:
                 # ---- Reports only ----
                 final_df, bad2, _ = build_from_pdf_only(pdf_files)
@@ -764,7 +809,7 @@ with tab1:
                 if final_df.empty:
                     st.warning("No isolates could be read from the uploaded reports.")
                 else:
-                    st.session_state.update(processed_data=final_df, skipped=[], bad=bad,
+                    st.session_state.update(processed_data=final_df, skipped=[], name_diff=[], bad=bad,
                                             dupes=dupes, discrepancies=[], mode="pdf")
 
     if 'processed_data' in st.session_state:
@@ -817,10 +862,15 @@ with tab1:
             items = [f"{k} ({', '.join(vs)})" for k, vs in sorted(intr_map.items())]
             render_callout("Isolates with intrinsic results (INTR)", items, "#2f88e6", "#E4F1FC")
 
+        name_diff = st.session_state.get('name_diff')
+        if name_diff:
+            render_callout("CP is in the sheet but the isolate name differs (kept, no susceptibility; check naming)",
+                           sorted(name_diff), "#d99000", "#FBF1D6", ordered=False)
+
         skipped = st.session_state.get('skipped')
         if skipped:
-            render_callout("Isolates with no matching AST row (not included)", sorted(skipped),
-                           "#6c6b6a", "#EEEAE6")
+            render_callout("Reports not yet in the AST sheet (kept, susceptibility blank for now)", sorted(skipped),
+                           "#6c6b6a", "#EEEAE6", ordered=False)
 
         if st.session_state.get('bad'):
             for b in st.session_state['bad']:
