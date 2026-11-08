@@ -16,170 +16,100 @@ from datetime import datetime, timedelta, timezone
 # 1. PAGE CONFIG
 # ============================================================================
 st.set_page_config(
-    page_title="AMR National Surveillance | USYD",
+    page_title="AST National Surveillance | USYD",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ============================================================================
-# 2. MODERN BLUE THEME
+# 2. THEME (University of Sydney blue, white canvas, no gradients)
 # ============================================================================
-BLUE_900 = "#0a2540"
-BLUE_800 = "#103a6b"
-BLUE_700 = "#14539a"
-BLUE_600 = "#1d6fd6"
-BLUE_500 = "#2f88e6"
-BLUE_400 = "#5aa2ee"
-BLUE_300 = "#93c2f4"
-BLUE_50  = "#eef5fd"
-INK      = "#0e1c2b"
-MUTED    = "#5d6e80"
-LINE     = "#e2eaf3"
-CANVAS   = "#eaf0f7"
-WHITE    = "#ffffff"
+BLUE_900 = "#0a2540"; BLUE_800 = "#103a6b"; BLUE_700 = "#14539a"
+BLUE_600 = "#1d6fd6"; BLUE_500 = "#2f88e6"; BLUE_300 = "#93c2f4"
+BLUE_50 = "#eef5fd"; INK = "#141414"; MUTED = "#141414"
+LINE = "#e2eaf3"; CANVAS = "#ffffff"; WHITE = "#ffffff"
 
+# Organism / category sequence: one blue family.
 BLUE_SEQ = ["#1d6fd6", "#103a6b", "#2f88e6", "#5aa2ee", "#0a2540", "#14539a", "#93c2f4", "#3f97ea"]
+# S / I / R keep their clinical colours.
 SIR_CMAP = {"Susceptible": "#1aa260", "Intermediate": "#e0a400", "Resistant": "#d63a4a"}
 
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-
     html, body, [class*="css"], .stApp {{
-        font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        color: {INK};
-        font-size: 16px;
+        font-family:'Inter',-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+        color:{INK}; font-size:16px;
     }}
-    .stApp {{ background-color: {CANVAS}; }}
-    .block-container {{ padding-top: 1.4rem; max-width: 1340px; }}
-
-    /* ---------- Hero ---------- */
+    .stApp {{ background-color:{CANVAS}; }}
+    .block-container {{ padding-top:1.4rem; max-width:1340px; }}
     .amr-hero {{
-        position: relative; overflow: hidden;
-        background: linear-gradient(125deg, {BLUE_900} 0%, {BLUE_700} 55%, {BLUE_600} 100%);
-        border-radius: 18px; padding: 2rem 2.2rem; margin-bottom: 1.6rem;
-        box-shadow: 0 14px 34px rgba(10,37,64,0.28);
+        position:relative; overflow:hidden; background:{BLUE_600};
+        border-radius:18px; padding:2rem 2.2rem; margin-bottom:1.6rem;
+        box-shadow:0 8px 22px rgba(29,111,214,0.20);
     }}
-    .amr-hero::after {{
-        content: ""; position: absolute; top: -40%; right: -8%;
-        width: 360px; height: 360px; border-radius: 50%;
-        background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 70%);
-    }}
-    .amr-hero h1 {{
-        color: {WHITE}; font-size: 2.25rem; font-weight: 800; margin: 0;
-        letter-spacing: -0.025em; line-height: 1.12;
-    }}
-    .amr-hero p {{
-        color: #d3e4fb; font-size: 1.05rem; margin: 0.5rem 0 0 0; font-weight: 500;
-    }}
-    .amr-eyebrow {{
-        display:inline-block; color:#bcd6f7; font-size:0.78rem; font-weight:700;
-        letter-spacing:0.14em; text-transform:uppercase; margin-bottom:0.5rem;
-    }}
-
-    /* ---------- Section headers ---------- */
-    .sec {{
-        display:flex; align-items:center; gap:0.7rem;
-        font-size:1.6rem; font-weight:800; color:{BLUE_800};
-        letter-spacing:-0.015em; margin:0.2rem 0 1rem 0;
-    }}
-    .sec-bar {{ width:6px; height:28px; border-radius:6px;
-        background:linear-gradient(180deg,{BLUE_500},{BLUE_700}); display:inline-block; }}
-    .sec-note {{ color:{MUTED}; font-size:1rem; margin:-0.6rem 0 1.1rem 1.1rem; }}
-
-    /* ---------- Card panels (bordered containers) ---------- */
+    .amr-hero h1 {{ color:{WHITE}; font-size:2.35rem; font-weight:800; margin:0;
+        letter-spacing:-0.025em; line-height:1.12; }}
+    .amr-eyebrow {{ display:inline-block; color:#bcd6f7; font-size:0.82rem; font-weight:700;
+        letter-spacing:0.14em; text-transform:uppercase; margin-bottom:0.5rem; }}
+    .amr-logo {{ position:absolute; top:1.9rem; right:2.2rem; height:48px; z-index:3; opacity:0.97; }}
+    @media (max-width:640px) {{ .amr-logo {{ position:static; height:40px;
+        margin-bottom:0.9rem; display:block; }} }}
+    .sec {{ display:flex; align-items:center; gap:0.7rem; font-size:1.55rem; font-weight:800;
+        color:{BLUE_800}; letter-spacing:-0.015em; margin:0.2rem 0 1rem 0; }}
+    .sec-bar {{ width:6px; height:27px; border-radius:6px; background:{BLUE_600}; display:inline-block; }}
     [data-testid="stVerticalBlockBorderWrapper"] {{
-        background:{WHITE}; border:1px solid {LINE} !important; border-radius:16px;
-        box-shadow:0 4px 18px rgba(14,28,43,0.06); padding:1.2rem 1.4rem;
-    }}
-    /* No nested block inside a card may draw its own border/background/shadow,
-       otherwise Streamlit's own container border shows as a second box. */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"],
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] {{
-        border:none !important; background:transparent !important;
-        box-shadow:none !important; padding:0 !important;
-    }}
-
-    /* ---------- Buttons ---------- */
-    .stButton>button {{
-        width:100%; border-radius:11px; height:3.2em; border:none;
-        background:linear-gradient(135deg,{BLUE_600} 0%,{BLUE_500} 100%);
-        color:{WHITE}; font-weight:700; font-size:1.02rem; letter-spacing:0.01em;
-        box-shadow:0 6px 18px rgba(29,111,214,0.32); transition:all 0.16s ease;
-    }}
-    .stButton>button:hover {{
-        background:linear-gradient(135deg,{BLUE_700} 0%,{BLUE_600} 100%);
-        box-shadow:0 9px 24px rgba(29,111,214,0.42); transform:translateY(-1px); color:{WHITE};
-    }}
-    .stDownloadButton>button {{
-        border-radius:11px; background:{WHITE}; color:{BLUE_700};
-        border:1.6px solid {BLUE_500}; font-weight:700; height:3em;
-    }}
+        background:transparent; border:none !important; box-shadow:none !important; padding:0 !important; }}
+    [data-testid="stPlotlyChart"] {{ background:{WHITE}; border:1px solid {LINE};
+        border-radius:14px; box-shadow:0 3px 14px rgba(46,45,44,0.05); padding:0.6rem 0.8rem; }}
+    [data-testid="stDataFrame"] {{ border-radius:12px; overflow:hidden;
+        border:1px solid {LINE}; box-shadow:0 3px 14px rgba(46,45,44,0.05); }}
+    .stButton>button {{ width:100%; border-radius:11px; height:3.2em; border:none;
+        background:{BLUE_600}; color:{WHITE}; font-weight:700; font-size:1.05rem;
+        box-shadow:0 4px 12px rgba(29,111,214,0.22); transition:all 0.16s ease; }}
+    .stButton>button:hover {{ background:{BLUE_700};
+        box-shadow:0 6px 16px rgba(29,111,214,0.30); transform:translateY(-1px); color:{WHITE}; }}
+    .stDownloadButton>button {{ border-radius:11px; background:{WHITE}; color:{BLUE_700};
+        border:1.6px solid {BLUE_500}; font-weight:700; height:3em; }}
     .stDownloadButton>button:hover {{ background:{BLUE_600}; color:{WHITE}; border-color:{BLUE_600}; }}
-
-    /* ---------- Sidebar ---------- */
     [data-testid="stSidebar"] {{ background:{WHITE}; border-right:1px solid {LINE}; }}
     [data-testid="stSidebar"] h3 {{ color:{BLUE_800}; }}
-
-    /* ---------- Tabs ---------- */
     .stTabs [data-baseweb="tab-list"] {{ gap:0.5rem; border-bottom:2px solid {LINE}; }}
-    .stTabs [data-baseweb="tab"] {{
-        font-weight:700; font-size:1.04rem; color:{MUTED}; padding:0.6rem 1.2rem;
-    }}
+    .stTabs [data-baseweb="tab"] {{ font-weight:700; font-size:1.04rem; color:{MUTED}; padding:0.6rem 1.2rem; }}
     .stTabs [aria-selected="true"] {{ color:{BLUE_600}; }}
     .stTabs [data-baseweb="tab-highlight"] {{ background:{BLUE_600}; height:3px; border-radius:3px; }}
-
-    /* ---------- Metric cards ---------- */
-    [data-testid="stMetric"] {{
-        background:linear-gradient(180deg,{WHITE} 0%,{BLUE_50} 130%);
-        border:1px solid {LINE}; border-left:5px solid {BLUE_600};
-        border-radius:14px; padding:1.25rem 1.45rem; box-shadow:0 3px 12px rgba(14,28,43,0.05);
-    }}
-    [data-testid="stMetricValue"] {{ color:{BLUE_700}; font-weight:900; font-size:2.7rem; }}
-    [data-testid="stMetricLabel"] {{ color:{MUTED}; font-weight:700; font-size:1.25rem; }}
-    [data-testid="stMetricLabel"] p {{ font-size:1.25rem; }}
-
-    /* ---------- Uploaders (blend into the section card) ---------- */
     [data-testid="stFileUploader"] {{ background:transparent; border:none; padding:0; }}
-    [data-testid="stFileUploader"] label {{ font-weight:600; color:{BLUE_800}; font-size:0.9rem; }}
     [data-testid="stFileUploaderDropzone"] {{
         background:{BLUE_50}; border:1.4px dashed {BLUE_300}; border-radius:11px;
-        padding:0.5rem 0.9rem; min-height:auto;
-    }}
-    [data-testid="stFileUploaderDropzone"] section {{ background:transparent; }}
+        padding:0.5rem 0.9rem; min-height:auto; }}
     [data-testid="stFileUploaderDropzoneInstructions"] span,
     [data-testid="stFileUploaderDropzoneInstructions"] small {{ font-size:0.74rem; }}
     [data-testid="stFileUploaderDropzone"] button {{ font-size:0.78rem; padding:0.2rem 0.7rem; }}
-
-    /* ---------- Dataframe (sits inside a card already) ---------- */
-    [data-testid="stDataFrame"] {{ border-radius:10px; overflow:hidden; border:none; }}
-
     .legend-chip {{ display:inline-block; width:14px; height:14px; border-radius:4px;
         margin-right:8px; vertical-align:middle; }}
-    .skip-box {{
-        background:{BLUE_50}; border:1px solid {LINE}; border-left:4px solid {BLUE_400};
-        border-radius:12px; padding:0.9rem 1.1rem;
-    }}
-    .skip-box b {{ color:{BLUE_800}; }}
-    .skip-box ol {{ margin:0.5rem 0 0 1.1rem; color:{INK}; }}
-
-    /* ---------- Message callouts ---------- */
-    .callout {{
-        background:{WHITE}; border:1px solid {LINE}; border-radius:13px;
-        padding:0.9rem 1.15rem; margin:0.6rem 0; box-shadow:0 2px 10px rgba(14,28,43,0.05);
-    }}
-    .callout-head {{
-        display:flex; align-items:center; gap:0.55rem;
-        font-weight:800; font-size:1.06rem; color:{INK};
-    }}
+    .kpi {{ background:{WHITE}; border:1px solid {LINE}; border-radius:16px;
+        padding:1.1rem 1.25rem; box-shadow:0 3px 14px rgba(46,45,44,0.06);
+        display:flex; flex-direction:column; min-height:150px; }}
+    .kpi-body {{ margin-top:auto; }}
+    .kpi-num {{ font-size:3rem; font-weight:900; line-height:1; color:{INK}; }}
+    .kpi-lab {{ font-size:1.12rem; font-weight:800; color:{INK}; margin-top:0.35rem; }}
+    .kpi-total {{ background:{BLUE_600}; border:none; text-align:center; justify-content:center;
+        box-shadow:0 6px 16px rgba(29,111,214,0.24); }}
+    .kpi-total .kpi-body {{ margin-top:0; }}
+    .kpi-total .kpi-num {{ color:{WHITE}; font-size:3.4rem; }}
+    .kpi-total .kpi-lab {{ color:{WHITE}; }}
+    .callout {{ background:{WHITE}; border:1px solid {LINE}; border-radius:13px;
+        padding:0.9rem 1.15rem; margin:0.6rem 0; box-shadow:0 2px 10px rgba(46,45,44,0.05); }}
+    .callout-head {{ display:flex; align-items:center; gap:0.55rem; font-weight:800;
+        font-size:1.06rem; color:{INK}; }}
     .callout-dot {{ width:11px; height:11px; border-radius:50%; display:inline-block; flex:0 0 auto; }}
-    .callout-count {{
-        margin-left:auto; border-radius:999px; padding:0.12rem 0.7rem;
-        font-size:0.82rem; font-weight:800; line-height:1.4;
-    }}
+    .callout-count {{ margin-left:auto; border-radius:999px; padding:0.12rem 0.7rem;
+        font-size:0.82rem; font-weight:800; line-height:1.4; }}
     .callout ol, .callout ul {{ margin:0.6rem 0 0.1rem 1.3rem; color:{INK}; }}
     .callout li {{ margin:0.2rem 0; padding-left:0.15rem; }}
+    .mode-note {{ background:{BLUE_50}; border:1px solid {LINE}; border-left:4px solid {BLUE_500};
+        border-radius:12px; padding:0.75rem 1.05rem; color:{INK}; margin:0.3rem 0 0.2rem 0; }}
     hr {{ border-color:{LINE}; }}
     </style>
 """, unsafe_allow_html=True)
@@ -188,11 +118,11 @@ st.markdown(f"""
 def section(title, note=None):
     st.markdown(f"<div class='sec'><span class='sec-bar'></span>{title}</div>", unsafe_allow_html=True)
     if note:
-        st.markdown(f"<div class='sec-note'>{note}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='color:{MUTED};font-size:0.95rem;margin:-0.7rem 0 1rem 1.1rem;'>{note}</div>",
+                    unsafe_allow_html=True)
 
 
 def render_callout(title, items, accent, tint, ordered=True):
-    """Render a styled message box with a coloured accent, a count badge and a list."""
     tag = "ol" if ordered else "ul"
     lis = "".join(f"<li>{it}</li>" for it in items)
     st.markdown(
@@ -206,18 +136,23 @@ def render_callout(title, items, accent, tint, ordered=True):
 
 def style_fig(fig, height, bottom=40):
     fig.update_layout(
-        height=height, template="simple_white", plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=INK, size=15.5, family="Inter"), margin=dict(b=bottom, t=24, l=4, r=4),
-        hoverlabel=dict(font=dict(size=16, family="Inter"), bgcolor="white", bordercolor=LINE),
+        height=height, template="simple_white", plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(color=INK, size=17, family="Inter"), margin=dict(b=bottom, t=24, l=4, r=4),
+        hoverlabel=dict(font=dict(size=16, color=INK, family="Inter"), bgcolor="white", bordercolor=LINE),
     )
-    fig.update_xaxes(showline=True, linewidth=1.4, linecolor=LINE, tickfont=dict(size=14))
-    fig.update_yaxes(showline=True, linewidth=1.4, linecolor=LINE, gridcolor=LINE, tickfont=dict(size=14))
+    fig.update_xaxes(showline=True, linewidth=1.4, linecolor="#9a948e", tickfont=dict(size=16, color=INK))
+    fig.update_yaxes(showline=True, linewidth=1.4, linecolor="#9a948e", gridcolor=LINE, tickfont=dict(size=16, color=INK))
     return fig
+
+
+def set_titles(fig, xtitle="", ytitle=""):
+    """Set axis titles with an explicit black font (update_layout resets the colour)."""
+    fig.update_xaxes(title=dict(text=xtitle, font=dict(size=16, color=INK)))
+    fig.update_yaxes(title=dict(text=ytitle, font=dict(size=16, color=INK)))
 
 
 @st.cache_data
 def logo_data_uri():
-    """Return a base64 data URI for the white USYD logo if it sits next to app.py."""
     here = os.path.dirname(os.path.abspath(__file__))
     for name in ("usyd_logo_white.png", "assets/usyd_logo_white.png"):
         path = os.path.join(here, name)
@@ -233,6 +168,14 @@ def logo_data_uri():
 AST_FIRST_ABX_COL = 13
 AST_CP_COL = 1
 AST_ISOLATE_COL = 10
+AST_CLINIC_COL = 3
+AST_MALDI_SCORE_COL = 11
+AST_DATE_COL = 0
+AST_SPECIES_COL = 5
+AST_BREED_COL = 6
+AST_SEX_COL = 7
+AST_SAMPLE_COL = 8
+AST_SITE_COL = 9
 AST_SKIP_SHEETS = {"MALDI ID NAME LIST"}
 
 CANON_ABBREVS = [
@@ -241,20 +184,16 @@ CANON_ABBREVS = [
     "TIC75", "TIM85", "S5", "CN 120", "RD5", "FA10", "AN30", "IPM10", "VA30",
 ]
 
-# Columns sourced from the PDF report.
 PDF_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity", "Isolate",
 ]
-# Final column order. Clinic, MALDI Score and Gram Stain are derived/AST fields.
 OUTPUT_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Clinic", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity",
     "Isolate", "Gram Stain", "MALDI Score",
 ] + CANON_ABBREVS
 
-# Gram status by genus (the first word of the isolate name). Lowercase keys.
-# Unknown genera return "NA" so they show up and the lists can be extended.
 GRAM_POSITIVE_GENERA = {
     "actinomyces", "aerococcus", "anaerococcus", "arcanobacterium", "atopobium",
     "bacillus", "brevibacterium", "cellulosimicrobium", "clostridioides", "clostridium",
@@ -289,7 +228,6 @@ GRAM_NEGATIVE_GENERA = {
 
 
 def gram_status(isolate):
-    """Classify an isolate as Gram Positive/Negative from its genus (first word)."""
     if not isolate or str(isolate).strip() in ("NA", "nan", "Na", ""):
         return "NA"
     genus = str(isolate).strip().split()[0].strip(".,;:").lower()
@@ -299,22 +237,8 @@ def gram_status(isolate):
         return "Negative"
     return "NA"
 
-GREEN = "FFC6EFCE"; YELLOW = "FFFFEB9C"; RED = "FFFFC7CE"
-ABX_HEADER_COLORS = {
-    "AM10": GREEN, "CZN 30": GREEN, "CL30": GREEN, "DO30": GREEN, "SXT": GREEN,
-    "C30": GREEN, "P10": GREEN, "CC2": GREEN, "E15": GREEN, "FA10": GREEN,
-    "AMC30": YELLOW, "GM 10": YELLOW, "N30": YELLOW, "TIM85": YELLOW, "CN 120": YELLOW,
-    "ENR5": RED, "MAR": RED, "CVN30": RED, "OX1": RED, "F/M300": RED,
-    "RD5": RED, "AN30": RED, "IPM10": RED, "VA30": RED,
-}
-
-# Valid antibiotic-cell values. Anything else is treated as a likely typo and
-# highlighted bright red so it can be checked.
-VALID_SIR = {"S", "I", "R", "INTR"}
-
 
 def cell_css(v):
-    """Cell styling for the antibiotic columns only (applied via subset)."""
     if v == "S":
         return "background-color: #C6EFCE"
     if v == "I":
@@ -325,8 +249,11 @@ def cell_css(v):
         return "background-color: #BFE3F7"
     if v is None or v == "" or v == "NA" or (isinstance(v, float) and pd.isna(v)):
         return ""
-    # Unexpected value (typo / bad entry): flag loudly.
     return "background-color: #FF2D2D; color: white; font-weight: 700"
+
+
+VALID_SIR = {"S", "I", "R", "INTR"}
+
 
 # ============================================================================
 # 4. MODEL LOADING
@@ -334,7 +261,7 @@ def cell_css(v):
 @st.cache_resource
 def load_nlp():
     return spacy.load("en_core_web_sm")
-nlp = load_nlp()
+
 
 # ============================================================================
 # 5. HELPERS
@@ -349,7 +276,7 @@ def normalize_cp(value):
 def redact_text(text):
     if not isinstance(text, str):
         return "NA"
-    doc = nlp(text)
+    doc = load_nlp()(text)
     for ent in doc.ents:
         if ent.label_ in ["PERSON", "GPE", "LOC"]:
             text = text.replace(ent.text, "[REDACTED]")
@@ -372,8 +299,10 @@ def standardize_age(age_string):
 def standardize_date(date_string):
     if not date_string or date_string == "NA":
         return "NA"
+    if isinstance(date_string, datetime):
+        return date_string.strftime("%Y%m%d")
     try:
-        clean = re.sub(r'^[a-zA-Z]+,\s*', '', date_string)
+        clean = re.sub(r'^[a-zA-Z]+,\s*', '', str(date_string))
         clean = re.sub(r'\s+\d{1,2}:\d{2}\s+[APMpm]{2}$', '', clean)
         return datetime.strptime(clean.strip(), "%d %B %Y").strftime("%Y%m%d")
     except Exception:
@@ -383,7 +312,7 @@ def standardize_date(date_string):
                 return dt.strftime("%Y%m%d")
         except Exception:
             pass
-    return date_string
+    return str(date_string)
 
 
 def clean_boilerplate(text):
@@ -403,7 +332,7 @@ def clean_boilerplate(text):
 
 
 def clean_isolate_name(name):
-    if pd.isna(name):
+    if name is None or (isinstance(name, float) and pd.isna(name)):
         return "NA"
     name = str(name)
     name = re.sub(r'^\d+[\.\)]\s*', '', name)
@@ -412,6 +341,47 @@ def clean_isolate_name(name):
     name = re.sub(r'^[-–—\s]+', '', name)
     name = " ".join(name.split()).capitalize()
     return name if name else "NA"
+
+
+def cell_or_na(row, idx):
+    if len(row) <= idx or row[idx] in (None, ""):
+        return "NA"
+    return re.sub(r'\s+', ' ', str(row[idx])).strip()
+
+
+def parse_ast_sex(raw):
+    """AST sheet sex codes: MN = male neutered, FS = female spayed, M/F = entire."""
+    s = str(raw).strip().upper()
+    if s in ("UNK", "UNKNOWN"):
+        return "Unknown", "Unknown"
+    if s in ("NA", "N/A", ""):
+        return "NA", "NA"
+    sex = "Male" if s[0] == "M" else ("Female" if s[0] == "F" else s)
+    neutered = "Yes" if s in ("MN", "FS", "FN", "MC", "DESEXED", "NEUTERED", "SPAYED") else "No"
+    return sex, neutered
+
+
+def clean_site(raw):
+    """Main site + detail, mirroring the PDF pipeline's parenthetical / separator split."""
+    s = str(raw).strip() if raw not in (None, "") else ""
+    if not s or s.upper() in ("NA", "N/A"):
+        return "NA", "NA"
+    detail = "NA"
+    m = re.search(r'^(.*?)\s*\((.*?)\)', s)
+    if m:
+        s = m.group(1).strip()
+        dp = m.group(2).strip()
+        if dp:
+            detail = dp[0].upper() + dp[1:]
+    else:
+        parts = re.split(r'[,/:\-;|]', s, maxsplit=1)
+        if len(parts) > 1:
+            s = parts[0].strip()
+            dp = re.sub(r'[\)\]\}]+$', '', parts[1].strip()).strip()
+            if dp:
+                detail = dp[0].upper() + dp[1:]
+    s = (s[0].upper() + s[1:]) if s else "NA"
+    return s, detail
 
 
 # ============================================================================
@@ -461,22 +431,7 @@ def parse_pdf_metadata(file_object):
                 sample_type_val, sample_site_val = sf.groups()
 
         sample_site_val = redact_text(sample_site_val).strip()
-        sample_site_detailed_val = "NA"
-        if sample_site_val and sample_site_val != "NA":
-            pm = re.search(r'^(.*?)\s*\((.*?)\)', sample_site_val)
-            if pm:
-                sample_site_val = pm.group(1).strip()
-                dp = pm.group(2).strip()
-                if dp:
-                    sample_site_detailed_val = dp[0].upper() + dp[1:]
-            else:
-                ss = re.split(r'[,/:\-;|]', sample_site_val, maxsplit=1)
-                if len(ss) > 1:
-                    sample_site_val = ss[0].strip()
-                    dp = re.sub(r'[\)\]\}]+$', '', ss[1].strip()).strip()
-                    if dp:
-                        sample_site_detailed_val = dp[0].upper() + dp[1:]
-            sample_site_val = (sample_site_val[0].upper() + sample_site_val[1:]) if sample_site_val else "NA"
+        sample_site_val, sample_site_detailed_val = clean_site(sample_site_val)
 
         names = []
         for m in re.finditer(r'([A-Z][a-z]+\s+(?:sp\.|spp\.|[a-z]+))\s*(?:\n\s*)*SUSCEPTIBILITY', block):
@@ -510,22 +465,13 @@ def parse_pdf_metadata(file_object):
                 "_cp_key": cp_key,
                 "_isolate_key": iso_clean.strip().lower(),
             })
-
     return records
 
 
 # ============================================================================
-# 7. AST ANTIBIOTIC LOOKUP
+# 7. AST ANTIBIOTIC LOOKUP + DIRECT EXTRACTION
 # ============================================================================
-AST_CLINIC_COL = 3
-AST_MALDI_SCORE_COL = 11
-
-
 def resolve_cell(meas, sir):
-    """Resolve one antibiotic cell from its (measurement, S/I/R) pair.
-    If the measurement cell reads INTR (intrinsic), record INTR.
-    Otherwise take the S/I/R interpretation. Unexpected text is kept verbatim
-    so the styler can flag it as a likely typo."""
     if meas is not None and str(meas).strip().upper() == "INTR":
         return "INTR"
     if sir is None:
@@ -535,14 +481,11 @@ def resolve_cell(meas, sir):
         return "NA"
     if s.upper() in ("S", "I", "R"):
         return s.upper()
-    return s  # unexpected -> kept, highlighted red downstream
+    return s
 
 
-def build_ast_lookup(file_object):
+def _ast_sheets(file_object):
     wb = openpyxl.load_workbook(file_object, read_only=True, data_only=True)
-    meas_cols = {abx: AST_FIRST_ABX_COL + 2 * i for i, abx in enumerate(CANON_ABBREVS)}
-    sir_cols = {abx: AST_FIRST_ABX_COL + 1 + 2 * i for i, abx in enumerate(CANON_ABBREVS)}
-    lookup = {}
     for sheet_name in wb.sheetnames:
         if sheet_name in AST_SKIP_SHEETS:
             continue
@@ -553,6 +496,14 @@ def build_ast_lookup(file_object):
         header = rows[0]
         if not header or len(header) <= AST_CP_COL or str(header[AST_CP_COL]).strip().upper() != "CP NUMBER":
             continue
+        yield sheet_name, rows
+
+
+def build_ast_lookup(file_object):
+    meas_cols = {abx: AST_FIRST_ABX_COL + 2 * i for i, abx in enumerate(CANON_ABBREVS)}
+    sir_cols = {abx: AST_FIRST_ABX_COL + 1 + 2 * i for i, abx in enumerate(CANON_ABBREVS)}
+    lookup = {}
+    for _, rows in _ast_sheets(file_object):
         for row in rows[1:]:
             if len(row) <= AST_CP_COL or not row[AST_CP_COL]:
                 continue
@@ -566,9 +517,18 @@ def build_ast_lookup(file_object):
                 maldi_val = f"{float(maldi_raw):.2f}" if maldi_raw not in (None, "") else "NA"
             except (ValueError, TypeError):
                 maldi_val = str(maldi_raw)
+            sex_a, neut_a = parse_ast_sex(cell_or_na(row, AST_SEX_COL))
+            site_a, _ = clean_site(cell_or_na(row, AST_SITE_COL))
             entry = {
                 "Clinic": row[AST_CLINIC_COL] if AST_CLINIC_COL < len(row) and row[AST_CLINIC_COL] is not None else "NA",
                 "MALDI Score": maldi_val,
+                # Sheet-side metadata, kept for cross-checking against the report.
+                "Species": cell_or_na(row, AST_SPECIES_COL),
+                "Breed": cell_or_na(row, AST_BREED_COL),
+                "Sex": sex_a,
+                "Neutered": neut_a,
+                "Sample Type": cell_or_na(row, AST_SAMPLE_COL),
+                "Site": site_a,
             }
             for abx in CANON_ABBREVS:
                 mi, si = meas_cols[abx], sir_cols[abx]
@@ -579,17 +539,40 @@ def build_ast_lookup(file_object):
     return lookup
 
 
+# Fields present in both the report and the AST sheet, compared to flag mismatches.
+CROSS_FIELDS = ["Species", "Breed", "Sex", "Neutered", "Sample Type", "Site"]
+
+
+def _norm_val(v):
+    return re.sub(r'\s+', ' ', str(v)).strip().upper()
+
+
+def cross_check(rec, vals):
+    """Return a list of 'Field (report: x, sheet: y)' for fields that disagree."""
+    diffs = []
+    for field in CROSS_FIELDS:
+        pv, av = rec.get(field, "NA"), vals.get(field, "NA")
+        if _norm_val(pv) in ("NA", "N/A", "") or _norm_val(av) in ("NA", "N/A", ""):
+            continue
+        if _norm_val(pv) != _norm_val(av):
+            diffs.append(f"{field} (report: {pv}, sheet: {av})")
+    return diffs
+
+
 # ============================================================================
-# 8. MERGE
+# 8. MERGE (PDF metadata + AST antibiotics, with cross-check)
 # ============================================================================
 def build_dataframe(pdf_records, ast_lookup):
-    rows, skipped = [], []
+    rows, skipped, discrepancies = [], [], []
     for rec in pdf_records:
         key = (rec["_cp_key"], rec["_isolate_key"])
         if key not in ast_lookup:
             skipped.append(f'{rec["Lab Reference"]}: {rec["Isolate"]}')
             continue
         vals = ast_lookup[key]
+        diffs = cross_check(rec, vals)
+        if diffs:
+            discrepancies.append(f'{rec["Lab Reference"]}: {rec["Isolate"]} — ' + "; ".join(diffs))
         merged = {col: rec[col] for col in PDF_COLUMNS}
         merged["Clinic"] = vals.get("Clinic", "NA")
         merged["Gram Stain"] = gram_status(rec["Isolate"])
@@ -598,37 +581,72 @@ def build_dataframe(pdf_records, ast_lookup):
             merged[abx] = vals.get(abx, "NA")
         rows.append(merged)
     df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
-    # Same case + same organism + identical susceptibility profile -> report once.
-    # If any antibiotic differs, both rows are kept.
     if not df.empty:
-        df = df.drop_duplicates(subset=["Lab Reference", "Isolate"] + CANON_ABBREVS,
-                                keep="first")
+        df = df.drop_duplicates(subset=["Lab Reference", "Isolate"] + CANON_ABBREVS, keep="first")
         df = df.sort_values(["Lab Reference", "Isolate"]).reset_index(drop=True)
-    return df, skipped
+    return df, skipped, discrepancies
 
 
+def build_from_pdf_only(pdf_files):
+    """Metadata-only master from reports. Antibiotic results need the AST sheet, so
+    the susceptibility columns are left blank."""
+    records, bad, cp_files = [], [], {}
+    for f in pdf_files:
+        try:
+            recs = parse_pdf_metadata(f)
+            for cp in {r["_cp_key"] for r in recs if r["_cp_key"]}:
+                cp_files.setdefault(cp, []).append(f.name)
+            records.extend(recs)
+        except Exception as e:
+            bad.append(f"{f.name}: {e}")
+    rows = []
+    for rec in records:
+        merged = {col: rec[col] for col in PDF_COLUMNS}
+        merged["Clinic"] = "NA"
+        merged["Gram Stain"] = gram_status(rec["Isolate"])
+        merged["MALDI Score"] = "NA"
+        for abx in CANON_ABBREVS:
+            merged[abx] = "NA"
+        rows.append(merged)
+    df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
+    if not df.empty:
+        df = df.drop_duplicates(subset=["Lab Reference", "Isolate"], keep="first")
+        df = df.sort_values(["Lab Reference", "Isolate"]).reset_index(drop=True)
+    return df, bad, cp_files
+
+
+def find_duplicate_uploads(cp_files, pdf_files):
+    dupes = []
+    for cp, files in sorted(cp_files.items()):
+        if len(files) > 1:
+            dupes.append(f"CP {cp} appears in {len(files)} uploaded files ({', '.join(sorted(set(files)))})")
+    names = [f.name for f in pdf_files]
+    for n in sorted({x for x in names if names.count(x) > 1}):
+        if not any(n in fs and len(fs) > 1 for fs in cp_files.values()):
+            dupes.append(f"File uploaded more than once: {n}")
+    return dupes
+
+
+# ============================================================================
+# 9. EXCEL
+# ============================================================================
 def build_excel(df):
     from openpyxl import Workbook
     wb = Workbook()
     ws = wb.active
-    ws.title = "AMR Surveillance"
+    ws.title = "AST Surveillance"
     cols = list(df.columns)
     abx_set = set(CANON_ABBREVS)
-
     header_font = Font(bold=True, color="103A6B", size=11)
-    header_border = Border(bottom=Side(style="medium", color="103A6B"))
+    header_border = Border(bottom=Side(style="medium", color="1D6FD6"))
     fill_map = {"S": "C6EFCE", "I": "FFEB9C", "R": "FFC7CE", "INTR": "BFE3F7"}
     typo_fill = PatternFill("solid", fgColor="FF2D2D")
     typo_font = Font(bold=True, color="FFFFFF")
-
-    # Header row
     for j, name in enumerate(cols, 1):
         c = ws.cell(1, j, name)
         c.font = header_font
         c.border = header_border
         c.alignment = Alignment(horizontal="center" if name in abx_set else "left", vertical="center")
-
-    # Data rows
     for i, (_, row) in enumerate(df.iterrows(), start=2):
         for j, name in enumerate(cols, 1):
             v = row[name]
@@ -642,8 +660,6 @@ def build_excel(df):
                 elif sval not in ("", "NA"):
                     cell.fill = typo_fill
                     cell.font = typo_font
-
-    # Column widths
     for j, name in enumerate(cols, 1):
         letter = ws.cell(1, j).column_letter
         if name in abx_set:
@@ -651,74 +667,73 @@ def build_excel(df):
         else:
             longest = max([len(str(name))] + df[name].astype(str).map(len).tolist())
             ws.column_dimensions[letter].width = min(max(longest + 2, 10), 34)
-
     ws.row_dimensions[1].height = 22
-    ws.freeze_panes = "A2"  # freeze the header row only, so horizontal scrolling works
-
+    ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
 # ============================================================================
-# 9. SIDEBAR
+# 10. SIDEBAR
 # ============================================================================
 with st.sidebar:
-    st.markdown(f"<h3 style='color:{BLUE_800};font-size:1.3rem;font-weight:800;margin-bottom:0.4rem;'>Workflow</h3>",
+    st.markdown(f"<h3 style='color:{BLUE_800};font-size:1.3rem;font-weight:800;margin-bottom:0.5rem;'>How to use</h3>",
                 unsafe_allow_html=True)
     st.markdown(
-        "1. Upload the AST LOGGING sheet(s)\n"
-        "2. Add the matching PDF report(s)\n"
-        "3. Process: match on CP number and isolate\n"
-        "4. Download the master sheet")
+        "Two ways to run it:\n\n"
+        "1. PDF reports on their own\n"
+        "2. PDF reports plus the AST logging sheet: the reports are matched on CP number "
+        "and isolate, their details are cross-checked against the sheet, and the "
+        "susceptibility results are pulled in\n\n"
+        "Then download the master sheet.")
     st.divider()
     st.markdown(f"<h3 style='color:{BLUE_800};font-size:1.3rem;font-weight:800;margin-bottom:0.5rem;'>Susceptibility key</h3>",
                 unsafe_allow_html=True)
     st.markdown(
+        f"<div style='color:{INK};font-size:0.98rem;line-height:2.1;'>"
         f"<span class='legend-chip' style='background:#C6EFCE;'></span>Susceptible (S)<br>"
         f"<span class='legend-chip' style='background:#FFEB9C;'></span>Intermediate (I)<br>"
         f"<span class='legend-chip' style='background:#FFC7CE;'></span>Resistant (R)<br>"
         f"<span class='legend-chip' style='background:#BFE3F7;'></span>Intrinsic (INTR)<br>"
-        f"<span class='legend-chip' style='background:#FF2D2D;'></span>Check entry",
+        f"<span class='legend-chip' style='background:#FF2D2D;'></span>Check entry</div>",
         unsafe_allow_html=True)
 
 # ============================================================================
-# 10. MAIN
+# 11. MAIN
 # ============================================================================
 _logo = logo_data_uri()
-_logo_html = (f"<img src='{_logo}' alt='The University of Sydney' "
-              f"style='height:50px;margin-bottom:1rem;display:block;'/>") if _logo else \
-             "<span class='amr-eyebrow'>Sydney School of Veterinary Science</span>"
-
+_logo_tag = f"<img src='{_logo}' class='amr-logo' alt='University of Sydney'/>" if _logo else ""
 st.markdown(
     "<div class='amr-hero'>"
-    f"{_logo_html}"
-    "<h1>AMR National Surveillance Pipeline</h1>"
-    "<p>Automated antimicrobial susceptibility surveillance &middot; report &amp; AST integration</p>"
+    + _logo_tag +
+    "<span class='amr-eyebrow'>Sydney School of Veterinary Science</span>"
+    "<h1>AST Surveillance Pipeline</h1>"
     "</div>",
     unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["Data Processing", "Analytics"])
+tab1, tab2 = st.tabs(["Master sheet", "Analytics"])
 
 with tab1:
     with st.container(border=True):
-        section("Upload sources", "Drop in the AST LOGGING sheet(s) and the matching PDF report(s).")
+        section("Upload sources")
         c1, c2 = st.columns(2)
         with c1:
-            ast_file = st.file_uploader("AST LOGGING sheet(s) (Excel)", type=["xlsx"])
+            st.markdown("**AST logging sheet (Excel)**")
+            ast_file = st.file_uploader("AST logging sheet", type=["xlsx"], label_visibility="collapsed")
         with c2:
-            pdf_files = st.file_uploader("PDF report(s)", type=["pdf"], accept_multiple_files=True)
-        run = st.button("Process & Synchronise")
+            st.markdown("**PDF reports**")
+            pdf_files = st.file_uploader("PDF reports", type=["pdf"], accept_multiple_files=True,
+                                         label_visibility="collapsed")
+        st.caption("Upload the reports on their own, or add the AST logging sheet to cross-check "
+                   "the details and pull in the susceptibility results.")
+        run = st.button("Process")
 
     if run:
-        if not ast_file:
-            st.error("Please upload the AST LOGGING sheet.")
-        elif not pdf_files:
-            st.error("Please upload at least one PDF report.")
+        if not pdf_files:
+            st.error("Upload the PDF reports. Add the AST logging sheet as well to cross-check and add susceptibility.")
         else:
-            ast_lookup = build_ast_lookup(ast_file)
-            pdf_records, bad = [], []
-            cp_files = {}
+            pdf_records, bad, cp_files = [], [], {}
             total = len(pdf_files)
             pb = st.progress(0.0, text=f"Reading reports (0/{total})…")
             for i, f in enumerate(pdf_files):
@@ -731,35 +746,47 @@ with tab1:
                 except Exception as e:
                     bad.append(f"{f.name}: {e}")
             pb.progress(1.0, text="Done")
+            dupes = find_duplicate_uploads(cp_files, pdf_files)
 
-            # Flag duplicate uploads: same report (CP) seen in more than one file,
-            # or the same file name uploaded more than once.
-            dupes = []
-            for cp, files in sorted(cp_files.items()):
-                if len(files) > 1:
-                    dupes.append(f"CP {cp} appears in {len(files)} uploaded files "
-                                 f"({', '.join(sorted(set(files)))})")
-            names = [f.name for f in pdf_files]
-            for n in sorted({x for x in names if names.count(x) > 1}):
-                if not any(n in fs and len(fs) > 1 for fs in cp_files.values()):
-                    dupes.append(f"File uploaded more than once: {n}")
-
-            final_df, skipped = build_dataframe(pdf_records, ast_lookup)
-
-            if final_df.empty:
-                st.warning("No isolates matched between the PDF(s) and the AST sheet. Check the CP numbers and isolate names line up.")
+            if ast_file:
+                # ---- Reports cross-checked against the AST sheet ----
+                ast_lookup = build_ast_lookup(ast_file)
+                final_df, skipped, discrepancies = build_dataframe(pdf_records, ast_lookup)
+                if final_df.empty:
+                    st.warning("No isolates matched between the PDF(s) and the AST sheet. Check the CP numbers and isolate names line up.")
+                else:
+                    st.session_state.update(processed_data=final_df, skipped=skipped, bad=bad,
+                                            dupes=dupes, discrepancies=discrepancies, mode="matched")
             else:
-                st.session_state['processed_data'] = final_df
-                st.session_state['skipped'] = skipped
-                st.session_state['bad'] = bad
-                st.session_state['dupes'] = dupes
+                # ---- Reports only ----
+                final_df, bad2, _ = build_from_pdf_only(pdf_files)
+                bad = bad + [b for b in bad2 if b not in bad]
+                if final_df.empty:
+                    st.warning("No isolates could be read from the uploaded reports.")
+                else:
+                    st.session_state.update(processed_data=final_df, skipped=[], bad=bad,
+                                            dupes=dupes, discrepancies=[], mode="pdf")
 
     if 'processed_data' in st.session_state:
         final_df = st.session_state['processed_data']
+        mode = st.session_state.get('mode', 'matched')
+
+        mode_msg = {
+            "matched": "Reports cross-checked against the AST sheet, matched on CP number and isolate. "
+                       "Susceptibility, clinic and MALDI come from the sheet.",
+            "pdf": "Built from the PDF reports only. Susceptibility results need the AST logging sheet, "
+                   "so the antibiotic columns are blank.",
+        }.get(mode, "")
+        if mode_msg:
+            st.markdown(f"<div class='mode-note'>{mode_msg}</div>", unsafe_allow_html=True)
 
         if st.session_state.get('dupes'):
             render_callout("Possible duplicate uploads", st.session_state['dupes'],
                            "#d99000", "#FBF1D6", ordered=False)
+
+        if st.session_state.get('discrepancies'):
+            render_callout("Report and AST sheet disagree (check these)", st.session_state['discrepancies'],
+                           "#c77f00", "#F7EAD2", ordered=False)
 
         with st.container(border=True):
             section("Master dataset")
@@ -767,11 +794,11 @@ with tab1:
             preview.index = range(1, len(preview) + 1)
             st.dataframe(preview.style.map(cell_css, subset=CANON_ABBREVS), use_container_width=True)
             aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
-            fname = f"AMR_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
+            fname = f"AST_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
             st.download_button("Download master Excel", build_excel(final_df), fname,
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        # Build grouped review lists from the final table.
+        # Grouped review lists from the final table.
         typo_map, intr_map = {}, {}
         for _, r in final_df.iterrows():
             key = f'{r["Lab Reference"]}: {r["Isolate"]}'
@@ -782,23 +809,18 @@ with tab1:
                 elif v not in ("S", "I", "R", "INTR", "NA", "", None) and not (isinstance(v, float) and pd.isna(v)):
                     typo_map.setdefault(key, []).append(f"{abx} = {v}")
 
-        # 1) Unexpected antibiotic values (likely typos)
         if typo_map:
             items = [f"{k} ({', '.join(vs)})" for k, vs in sorted(typo_map.items())]
-            render_callout("Isolates to check (unexpected antibiotic values)", items,
-                           "#FF2D2D", "#FFE4E4")
+            render_callout("Isolates to check (unexpected antibiotic values)", items, "#FF2D2D", "#FFE4E4")
 
-        # 2) Intrinsic results
         if intr_map:
             items = [f"{k} ({', '.join(vs)})" for k, vs in sorted(intr_map.items())]
-            render_callout("Isolates with intrinsic results (INTR)", items,
-                           "#2f88e6", "#E4F1FC")
+            render_callout("Isolates with intrinsic results (INTR)", items, "#2f88e6", "#E4F1FC")
 
-        # 3) Isolates with no matching AST row
         skipped = st.session_state.get('skipped')
         if skipped:
             render_callout("Isolates with no matching AST row (not included)", sorted(skipped),
-                           "#5d6e80", "#EAEEF3")
+                           "#6c6b6a", "#EEEAE6")
 
         if st.session_state.get('bad'):
             for b in st.session_state['bad']:
@@ -811,35 +833,33 @@ with tab2:
         df = st.session_state['processed_data'].copy()
         clean = df[~df["Isolate"].isin(["nan", "NA", "Na", ""])]
 
-        # ---- KPI strip ----
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total isolates", len(clean))
-        m2.metric("Unique clinical cases", clean["Lab Reference"].nunique())
-        m3.metric("Unique bacteria types", clean["Isolate"].nunique())
+        # KPI strip
+        k1, k2, k3 = st.columns(3)
+        k1.markdown(f"<div class='kpi kpi-total'><div class='kpi-body'><div class='kpi-num'>{len(clean)}</div>"
+                    f"<div class='kpi-lab'>Total isolates</div></div></div>", unsafe_allow_html=True)
+        k2.markdown(f"<div class='kpi'><div class='kpi-body'><div class='kpi-num'>{clean['Lab Reference'].nunique()}</div>"
+                    f"<div class='kpi-lab'>Unique clinical cases</div></div></div>", unsafe_allow_html=True)
+        k3.markdown(f"<div class='kpi'><div class='kpi-body'><div class='kpi-num'>{clean['Isolate'].nunique()}</div>"
+                    f"<div class='kpi-lab'>Unique bacteria types</div></div></div>", unsafe_allow_html=True)
         st.write("")
 
-        # ---- Bacterial species distribution (horizontal, sorted, labelled) ----
+        # Bacterial species distribution
         with st.container(border=True):
-            section("Bacterial species distribution",
-                    "Number of isolates identified for each organism across all processed reports.")
+            section("Bacterial species distribution")
             counts = clean["Isolate"].value_counts().sort_values(ascending=True)
             y_cats, x_vals = counts.index.tolist(), [int(v) for v in counts.values]
-            fig = go.Figure(go.Bar(
-                orientation="h", y=y_cats, x=x_vals, marker_color=BLUE_600, marker_line_width=0,
-                text=x_vals, textposition="outside", textfont=dict(size=14, color=INK), cliponaxis=False,
+            fig = go.Figure(go.Bar(orientation="h", y=y_cats, x=x_vals, marker_color=BLUE_600,
+                marker_line_width=0, text=x_vals, textposition="outside",
+                textfont=dict(size=16, color=INK), cliponaxis=False,
                 hovertemplate="<b>%{y}</b><br>Isolates: %{x}<extra></extra>"))
-            style_fig(fig, max(340, 38 * len(y_cats)), bottom=30)
-            fig.update_layout(xaxis_title="<b>Number of isolates</b>", yaxis_title="")
+            style_fig(fig, max(340, 40 * len(y_cats)), bottom=30)
+            set_titles(fig, "<b>Number of isolates</b>", "")
             fig.update_xaxes(range=[0, (max(x_vals) if x_vals else 1) * 1.18])
             st.plotly_chart(fig, use_container_width=True)
-            with st.expander("Show verification table"):
-                tbl = pd.DataFrame({"Bacterial species": y_cats[::-1], "Isolates": x_vals[::-1]})
-                tbl.index = range(1, len(tbl) + 1)
-                st.dataframe(tbl, use_container_width=True)
 
-        st.write("")
+        st.divider()
 
-        # ---- Resistance profile, split by Gram stain ----
+        # Resistance profile, split by Gram stain
         sir_cols = [c for c in CANON_ABBREVS if c in df.columns and df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
             long_all = df[["Isolate", "Gram Stain"] + sir_cols].melt(
@@ -872,47 +892,51 @@ with tab2:
                         customdata=cdata,
                         hovertemplate="<b>%{y}</b><br>" + res + ": %{x:.0f}% (%{customdata[0]} isolates)"
                                       "<br>%{customdata[1]}<extra></extra>")
-                style_fig(fig, max(300, 27 * len(order_cats) + 70), bottom=40)
+                style_fig(fig, max(300, 28 * len(order_cats) + 70), bottom=40)
                 fig.update_layout(barmode="stack",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title="", font=dict(size=14)),
-                    xaxis_title="<b>Percentage of isolates tested (%)</b>", yaxis_title="")
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title="",
+                                font=dict(size=14, color=INK)))
+                set_titles(fig, "<b>Percentage of isolates tested (%)</b>", "")
                 fig.update_xaxes(range=[0, 100], ticksuffix="%")
                 return fig
 
-            for gram_label, gram_val in [("Gram Positive", "Positive"), ("Gram Negative", "Negative")]:
+            for i, (gram_label, gram_val) in enumerate([("Gram Positive", "Positive"), ("Gram Negative", "Negative")]):
                 with st.container(border=True):
                     section(f"Resistance profile by antibiotic: {gram_label}",
-                            "Each bar is 100% of the isolates tested for that drug, split into S / I / R and sorted by "
-                            "resistance. n = number of isolates tested (small n = interpret with caution). "
-                            "Hover a segment to see which organisms it is.")
+                            "Each bar is 100% of the isolates tested for that drug, sorted by resistance. "
+                            "n = isolates tested. Hover a segment to see which organisms it is.")
                     fig_g = resistance_figure(long_all[long_all["Gram Stain"] == gram_val])
                     if fig_g is None:
                         st.info(f"No {gram_label.lower()} susceptibility results yet.")
                     else:
                         st.plotly_chart(fig_g, use_container_width=True)
-                st.write("")
+                if i == 0:
+                    st.divider()
+            st.divider()
+        else:
+            st.info("No susceptibility results to profile. Add the AST logging sheet to see resistance by antibiotic.")
+            st.divider()
 
-        # ---- Sample site (horizontal, sorted, labelled) ----
+        # Sample site distribution
         with st.container(border=True):
             section("Sample site distribution")
             clean_sites = df[~df["Site"].isin(["nan", "NA", "Na", ""])]
             s_counts = clean_sites["Site"].value_counts().sort_values(ascending=True)
             ys, xs = s_counts.index.tolist(), [int(v) for v in s_counts.values]
-            figs = go.Figure(go.Bar(
-                orientation="h", y=ys, x=xs, marker_color=BLUE_500, marker_line_width=0,
-                text=xs, textposition="outside", textfont=dict(size=14, color=INK), cliponaxis=False,
+            figs = go.Figure(go.Bar(orientation="h", y=ys, x=xs, marker_color=BLUE_500,
+                marker_line_width=0, text=xs, textposition="outside",
+                textfont=dict(size=16, color=INK), cliponaxis=False,
                 hovertemplate="<b>%{y}</b><br>Count: %{x}<extra></extra>"))
-            style_fig(figs, max(300, 42 * len(ys)), bottom=30)
-            figs.update_layout(xaxis_title="<b>Number of isolates</b>", yaxis_title="")
+            style_fig(figs, max(300, 44 * len(ys)), bottom=30)
+            set_titles(figs, "<b>Number of isolates</b>", "")
             figs.update_xaxes(range=[0, (max(xs) if xs else 1) * 1.2])
             st.plotly_chart(figs, use_container_width=True)
 
-        st.write("")
+        st.divider()
 
-        # ---- Breed prevalence (donut circles) at the end ----
+        # Breed prevalence (donuts)
         with st.container(border=True):
-            section("Breed prevalence by host species",
-                    "One count per unique clinical case.")
+            section("Breed prevalence by host species", "One count per unique clinical case.")
             unique_demo = clean.drop_duplicates(subset=['Lab Reference'])
             host_species = [s for s in unique_demo["Species"].unique() if s not in ("NA", "nan")]
             if host_species:
@@ -922,10 +946,10 @@ with tab2:
                     with col:
                         figd = px.pie(sub, names="Breed", hole=0.58, color_discrete_sequence=BLUE_SEQ)
                         figd.update_traces(textposition="outside", textinfo="label+percent",
-                            textfont=dict(size=14, family="Inter"),
+                            textfont=dict(size=14, family="Inter", color=INK),
                             marker=dict(line=dict(color="white", width=2)),
                             hovertemplate="<b>%{label}</b><br>Cases: %{value}<extra></extra>")
-                        figd.update_layout(height=440, template="simple_white", paper_bgcolor="rgba(0,0,0,0)",
+                        figd.update_layout(height=440, template="simple_white", paper_bgcolor="white",
                             title=dict(text=f"<b>{host} breeds</b>", x=0.5, xanchor="center",
                                        font=dict(size=19, color=BLUE_800)),
                             font=dict(color=INK, size=14.5, family="Inter"),
