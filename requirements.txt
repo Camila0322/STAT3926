@@ -2,7 +2,13 @@ streamlit==1.31.0
 pdfplumber==0.10.3
 spacy==3.7.2
 pandas==2.1.4
-plotly
+numpy==1.26.4
+plotly==5.18.0
+pyarrow==14.0.2
 openpyxl==3.1.2
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+
+
+
+
 
