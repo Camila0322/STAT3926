@@ -1,6 +1,5 @@
 import streamlit as st
 import pdfplumber
-import spacy
 import pandas as pd
 import re
 import io
@@ -272,31 +271,13 @@ VALID_SIR = {"S", "I", "R", "INTR"}
 
 
 # ============================================================================
-# 4. MODEL LOADING
-# ============================================================================
-@st.cache_resource
-def load_nlp():
-    return spacy.load("en_core_web_sm")
-
-
-# ============================================================================
-# 5. HELPERS
+# 4. HELPERS
 # ============================================================================
 def normalize_cp(value):
     if value is None:
         return None
     m = re.search(r'(\d{2}-\d{4,5})', str(value))
     return m.group(1) if m else None
-
-
-def redact_text(text):
-    if not isinstance(text, str):
-        return "NA"
-    doc = load_nlp()(text)
-    for ent in doc.ents:
-        if ent.label_ in ["PERSON", "GPE", "LOC"]:
-            text = text.replace(ent.text, "[REDACTED]")
-    return text
 
 
 def standardize_age(age_string):
@@ -329,6 +310,32 @@ def standardize_date(date_string):
         except Exception:
             pass
     return str(date_string)
+
+
+# Breed variants that should collapse to one label (keys are lower-case base forms).
+BREED_SYNONYMS = {
+    "labrador": "Labrador Retriever",
+    "english cocker spaniel": "Cocker Spaniel",
+    "dsh": "Domestic Shorthair",
+    "dlh": "Domestic Longhair",
+    "domestic short hair": "Domestic Shorthair",
+    "domestic long hair": "Domestic Longhair",
+    "staffy": "Staffordshire Bull Terrier",
+}
+
+
+def normalize_breed(breed):
+    """Tidy a breed so variants match: title-case, standardise the crossbreed
+    marker to a trailing ' X', and map known synonyms to one canonical name."""
+    if breed is None:
+        return "NA"
+    b = re.sub(r'\s+', ' ', str(breed)).strip()
+    if not b or b.upper() in ("NA", "N/A"):
+        return "NA"
+    cross = bool(re.search(r'[\s(]*\b(x|cross|crossbreed)\b[\s)]*$', b, flags=re.IGNORECASE))
+    base = re.sub(r'[\s(]*\b(x|cross|crossbreed)\b[\s)]*$', '', b, flags=re.IGNORECASE).strip()
+    base = BREED_SYNONYMS.get(base.lower(), base.title())
+    return (base + " X") if cross else base
 
 
 def clean_boilerplate(text):
@@ -515,7 +522,7 @@ def parse_pdf_metadata(file_object):
 
     sb = re.search(r'(Canine|Feline)[\s\-]+([a-zA-Z\s\-]+?)(?=\s*(?:\n|Male|Female|\d+\s*Years?|Our Ref|$))', raw_text, re.IGNORECASE)
     species_val = sb.group(1).strip().capitalize() if sb else "NA"
-    breed_val = sb.group(2).strip(" -") if sb else "NA"
+    breed_val = normalize_breed(sb.group(2)) if sb else "NA"
 
     age = re.search(r'(\d+\s*(?:Years?|Months?|Weeks?))', raw_text, re.IGNORECASE)
     age_val = standardize_age(age.group(1)) if age else "NA"
@@ -542,7 +549,7 @@ def parse_pdf_metadata(file_object):
             if sf:
                 sample_type_val, sample_site_val = sf.groups()
 
-        sample_site_val = redact_text(sample_site_val).strip()
+        sample_site_val = sample_site_val.strip() if isinstance(sample_site_val, str) else "NA"
         sample_site_val, sample_site_detailed_val = clean_site(sample_site_val)
 
         names = []
@@ -639,7 +646,7 @@ def build_ast_lookup(file_object):
                 "IsolateRaw": str(iso).strip(),
                 # Sheet-side metadata, kept for cross-checking against the report.
                 "Species": cell_or_na(row, AST_SPECIES_COL),
-                "Breed": cell_or_na(row, AST_BREED_COL),
+                "Breed": normalize_breed(cell_or_na(row, AST_BREED_COL)),
                 "Sex": sex_a,
                 "Neutered": neut_a,
                 "Sample Type": cell_or_na(row, AST_SAMPLE_COL),
