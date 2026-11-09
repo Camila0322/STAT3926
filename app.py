@@ -347,11 +347,24 @@ def normalize_breed(breed):
 
 
 def clinic_from_report(raw_text):
-    m = re.search(r"\bREP\s*ORT\s*\n\s*(.+?)\s+[A-Z][A-Za-z'’.\-]+,\s*[A-Z]", raw_text)
-    if m:
-        c = re.sub(r'\s+', ' ', m.group(1)).strip(' .,-')
-        if c and len(c) <= 30 and not re.search(r'\d', c):
-            return c.upper()
+    m = re.search(r"\bREP\s*ORT\s*\n\s*(.+)", raw_text)
+    if not m:
+        return "NA"
+    line = re.sub(r'\s+', ' ', m.group(1)).strip()
+    # Layout is "<CLINIC CODE> <Surname>, <First name>". The clinic is the leading
+    # run of all-caps tokens; the owner name that follows is Title case with a comma.
+    tokens = []
+    for tok in line.split(' '):
+        if ',' in tok:
+            break
+        core = tok.strip(".'-’")
+        if core and core == core.upper() and re.search(r'[A-Z]', core) and not re.search(r'\d', core):
+            tokens.append(core)
+        else:
+            break
+    c = " ".join(tokens).strip(' .,-')
+    if c and len(c) <= 30:
+        return c
     return "NA"
 
 
@@ -410,6 +423,47 @@ def parse_ast_sex(raw):
     return sex, neutered
 
 
+# Different wordings for the same anatomical site, collapsed onto one label.
+# Keys are lowercase; add or adjust entries here as Kate confirms them.
+SITE_SYNONYMS = {
+    "foot": "Foot", "feet": "Foot",
+    "belly": "Abdomen", "ventrum": "Abdomen",
+    "back": "Dorsum", "dorsum": "Dorsum",
+    "axilla": "Axilla", "axila": "Axilla",
+    "nail bed": "Nail bed", "nailbed": "Nail bed",
+}
+
+# Anatomical direction / plane words. When one of these sits in front of a site word
+# ("Ventral abdomen", "Dorsal back", "Lateral carpus") it is a modifier, not the site:
+# the word after it is the site, and the direction moves into the detailed column.
+# Laterality (left/right) is handled here too. A direction word on its own (bare
+# "Ventral", with no site word after it) is left untouched.
+SITE_MODIFIERS = {
+    "lt": "Left", "rt": "Right",
+    "left": "Left", "right": "Right", "bilateral": "Bilateral",
+    "ventral": "Ventral", "dorsal": "Dorsal", "lateral": "Lateral",
+    "medial": "Medial", "cranial": "Cranial", "caudal": "Caudal",
+    "rostral": "Rostral", "proximal": "Proximal", "distal": "Distal",
+}
+_MOD_RE = re.compile(r'\b(' + '|'.join(SITE_MODIFIERS) + r')\b', flags=re.IGNORECASE)
+
+# Words describing a lesion / finding rather than an anatomical site. When the main
+# part of the field is only these ("abscess + discharging sinus (skin)") and a real
+# site sits in the brackets, the bracket is the site and the lesion goes to detail.
+LESION_WORDS = {
+    "abscess", "sinus", "discharging", "draining", "discharge", "mass", "lesion",
+    "wound", "ulcer", "ulcerated", "nodule", "swelling", "cyst", "fistula", "pustule",
+    "pus", "exudate", "lump", "growth", "tract", "scab", "crust", "erosion", "papule",
+}
+_LESION_SPLIT = re.compile(r'[+&/,;]|\band\b', flags=re.IGNORECASE)
+
+
+def _is_lesion_only(text):
+    toks = [w.strip(".-':").lower() for w in _LESION_SPLIT.sub(' ', text).split()]
+    toks = [w for w in toks if w]
+    return bool(toks) and all(w in LESION_WORDS for w in toks)
+
+
 def clean_site(raw):
     """Main site + detail, mirroring the PDF pipeline's parenthetical / separator split."""
     s = str(raw).strip() if raw not in (None, "") else ""
@@ -429,14 +483,26 @@ def clean_site(raw):
             dp = re.sub(r'[\)\]\}]+$', '', parts[1].strip()).strip()
             if dp:
                 detail = dp[0].upper() + dp[1:]
-    lat = re.search(r'\b(left|right|bilateral|lt|rt)\b', s, flags=re.IGNORECASE)
-    stripped = re.sub(r'\b(left|right|bilateral|lt|rt)\b', '', s, flags=re.IGNORECASE)
-    stripped = re.sub(r'\s+', ' ', stripped).strip(' -,')
-    if stripped:
-        if detail == "NA" and lat:
-            detail = lat.group(1).capitalize()
+    # If the main text is only a lesion and the brackets hold a real site, swap them.
+    if detail != "NA" and detail.strip().lower() not in SITE_MODIFIERS and _is_lesion_only(s):
+        lesion = re.sub(r'\s+', ' ', s).strip(' :.,-')
+        s, detail = detail, (lesion[0].upper() + lesion[1:] if lesion else "NA")
+    found = [SITE_MODIFIERS[w.lower()] for w in _MOD_RE.findall(s)]
+    stripped = re.sub(r'\s+', ' ', _MOD_RE.sub('', s)).strip(' -,')
+    mod_text = ", ".join(dict.fromkeys(found))         # keep order, drop repeats
+    if stripped and found:
+        # "Ventral abdomen" -> site is the word after the direction, direction to detail.
+        if detail == "NA":
+            detail = mod_text
+        else:
+            detail = mod_text + ", " + detail[0].lower() + detail[1:]
         s = stripped
+    elif found and not stripped and detail != "NA":
+        # "Ventral (interdigital paws)" -> the real site is in the brackets; direction to detail.
+        s = detail
+        detail = mod_text
     s = (s[0].upper() + s[1:]) if s else "NA"
+    s = SITE_SYNONYMS.get(s.lower().strip(), s)
     return s, detail
 
 
@@ -906,8 +972,6 @@ with tab1:
             st.markdown("**PDF reports**")
             pdf_files = st.file_uploader("PDF reports", type=["pdf"], accept_multiple_files=True,
                                          label_visibility="collapsed")
-        st.caption("Upload the reports on their own, or add the AST logging sheet to cross-check "
-                   "the details and pull in the susceptibility results.")
         run = st.button("Process")
 
     if run:
