@@ -1176,7 +1176,7 @@ with tab2:
             figs = go.Figure(go.Bar(orientation="h", y=ys, x=xs, marker_color=BLUE_500,
                 marker_line_width=0, text=xs, textposition="outside",
                 textfont=dict(size=16, color=INK), cliponaxis=False,
-                hovertemplate="<b>%{y}</b><br>Count: %{x}<extra></extra>"))
+                hovertemplate="<b>%{y}</b><br>Isolates: %{x}<extra></extra>"))
             style_fig(figs, max(300, 44 * len(ys)), bottom=30)
             set_titles(figs, "<b>Number of isolates</b>", "")
             figs.update_xaxes(range=[0, (max(xs) if xs else 1) * 1.2])
@@ -1186,7 +1186,7 @@ with tab2:
 
         # Breed prevalence (horizontal bars, one chart per host species)
         with st.container(border=True):
-            section("Breed prevalence by host species", "One count per unique clinical case.")
+            section("Breed prevalence by host species", "One count per animal.")
             unique_demo = clean.drop_duplicates(subset=['Lab Reference'])
             host_species = [s for s in unique_demo["Species"].unique() if s not in ("NA", "nan")]
             if host_species:
@@ -1198,14 +1198,14 @@ with tab2:
                     st.markdown(
                         f"<div style='color:{BLUE_800};font-size:1.05rem;font-weight:800;"
                         f"margin:0.5rem 0 0.15rem;'>{host} breeds "
-                        f"<span style='font-weight:600;'>({len(sub)} cases)</span></div>",
+                        f"<span style='font-weight:600;'>({len(sub)} animals)</span></div>",
                         unsafe_allow_html=True)
                     figb = go.Figure(go.Bar(orientation="h", y=yb, x=xb, marker_color=BLUE_800,
                         marker_line_width=0, text=xb, textposition="outside",
                         textfont=dict(size=16, color=INK), cliponaxis=False,
-                        hovertemplate="<b>%{y}</b><br>Cases: %{x}<extra></extra>"))
+                        hovertemplate="<b>%{y}</b><br>Animals: %{x}<extra></extra>"))
                     style_fig(figb, max(160, 34 * len(yb)), bottom=30)
-                    set_titles(figb, "<b>Number of cases</b>", "")
+                    set_titles(figb, "<b>Number of animals</b>", "")
                     figb.update_xaxes(range=[0, (max(xb) if xb else 1) * 1.2], dtick=1)
                     st.plotly_chart(figb, use_container_width=True)
             else:
