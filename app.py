@@ -90,13 +90,13 @@ st.markdown(f"""
         margin-right:8px; vertical-align:middle; }}
     .kpi {{ background:{WHITE}; border:1px solid {LINE}; border-radius:16px;
         padding:1.1rem 1.25rem; box-shadow:0 3px 14px rgba(46,45,44,0.06);
-        display:flex; flex-direction:column; min-height:150px; }}
-    .kpi-body {{ margin-top:auto; }}
+        display:flex; flex-direction:column; justify-content:center; text-align:center;
+        min-height:150px; }}
+    .kpi-body {{ margin:0; }}
     .kpi-num {{ font-size:3rem; font-weight:900; line-height:1; color:{INK}; }}
     .kpi-lab {{ font-size:1.12rem; font-weight:800; color:{INK}; margin-top:0.35rem; }}
-    .kpi-total {{ background:{BLUE_600}; border:none; text-align:center; justify-content:center;
+    .kpi-total {{ background:{BLUE_600}; border:none;
         box-shadow:0 6px 16px rgba(29,111,214,0.24); }}
-    .kpi-total .kpi-body {{ margin-top:0; }}
     .kpi-total .kpi-num {{ color:{WHITE}; font-size:3.4rem; }}
     .kpi-total .kpi-lab {{ color:{WHITE}; }}
     .callout {{ background:{WHITE}; border:1px solid {LINE}; border-radius:13px;
@@ -829,14 +829,12 @@ def build_excel(df):
 # 10. SIDEBAR
 # ============================================================================
 with st.sidebar:
-    st.markdown(f"<h3 style='color:{BLUE_800};font-size:1.3rem;font-weight:800;margin-bottom:0.5rem;'>How to use</h3>",
+    st.markdown(f"<h3 style='color:{BLUE_800};font-size:1.3rem;font-weight:800;margin-bottom:0.5rem;'>User guide</h3>",
                 unsafe_allow_html=True)
     st.markdown(
-        "Two ways to run it:\n\n"
-        "1. PDF reports on their own\n"
-        "2. PDF reports plus the AST logging sheet: the reports are matched on CP number "
-        "and isolate, their details are cross-checked against the sheet, and the "
-        "susceptibility results are pulled in\n\n"
+        "Run it with either:\n\n"
+        "1. Reports on their own\n"
+        "2. Reports + AST sheet: matched on CP and isolate, cross-checked, and susceptibility added\n\n"
         "Then download the master sheet.")
     st.divider()
     st.markdown(f"<h3 style='color:{BLUE_800};font-size:1.3rem;font-weight:800;margin-bottom:0.5rem;'>Susceptibility key</h3>",
