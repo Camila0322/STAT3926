@@ -195,6 +195,7 @@ PDF_ABX_MAP = {
     "ticarcillin": "TIC75", "ampicillin": "AM10", "amoxicillin/clavulanic acid": "AMC30",
     "amoxicillin/clavulanate": "AMC30", "amikacin": "AN30", "oxacillin": "OX1",
     "gentamicin": "GM 10", "gentamicin 120": "CN 120", "high level gentamicin": "CN 120",
+    "gentamicin (high level)": "CN 120", "gentamicin high level": "CN 120", "gentamicin (high)": "CN 120",
     "imipenem": "IPM10", "chloramphenicol": "C30", "trimethoprim/sulpha": "SXT",
     "trimethoprim/sulphamethoxazole": "SXT", "trimethoprim-sulfamethoxazole": "SXT",
     "vancomycin": "VA30", "erythromycin": "E15", "cefoxitin": "FOX30", "rifampicin": "RD5",
@@ -202,12 +203,21 @@ PDF_ABX_MAP = {
     "cephazolin": "CZN 30", "ceftazidime": "CAZ30", "neomycin": "N30", "enrofloxacin": "ENR5",
     "marbofloxacin": "MAR", "fusidic acid": "FA10", "cefovecin": "CVN30", "streptomycin": "S5",
     "nitrofurantoin": "F/M300",
+    "ceftiofur": "Ceftiofur", "polymyxin b": "Polymyxin B",
+    "pradofloxacin": "Pradofloxacin", "tobramycin": "Tobramycin",
 }
+
+# Antibiotics tested on the PDF reports that have no column in the AST logging sheet.
+# These are filled from the report only (the sheet never carries a value for them).
+# Kept as full names until Kate confirms the preferred abbreviations.
+REPORT_ONLY_ABX = ["Ceftiofur", "Polymyxin B", "Pradofloxacin", "Tobramycin"]
+ALL_ABX = CANON_ABBREVS + REPORT_ONLY_ABX
+
 OUTPUT_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Clinic", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity",
     "Isolate", "Gram Stain", "MALDI Score",
-] + CANON_ABBREVS
+] + ALL_ABX
 
 GRAM_POSITIVE_GENERA = {
     "actinomyces", "aerococcus", "anaerococcus", "arcanobacterium", "atopobium",
@@ -332,10 +342,17 @@ def normalize_breed(breed):
     b = re.sub(r'\s+', ' ', str(breed)).strip()
     if not b or b.upper() in ("NA", "N/A"):
         return "NA"
-    cross = bool(re.search(r'[\s(]*\b(x|cross|crossbreed)\b[\s)]*$', b, flags=re.IGNORECASE))
     base = re.sub(r'[\s(]*\b(x|cross|crossbreed)\b[\s)]*$', '', b, flags=re.IGNORECASE).strip()
-    base = BREED_SYNONYMS.get(base.lower(), base.title())
-    return (base + " X") if cross else base
+    return BREED_SYNONYMS.get(base.lower(), base.title())
+
+
+def clinic_from_report(raw_text):
+    m = re.search(r"\bREP\s*ORT\s*\n\s*(.+?)\s+[A-Z][A-Za-z'’.\-]+,\s*[A-Z]", raw_text)
+    if m:
+        c = re.sub(r'\s+', ' ', m.group(1)).strip(' .,-')
+        if c and len(c) <= 30 and not re.search(r'\d', c):
+            return c.upper()
+    return "NA"
 
 
 def clean_boilerplate(text):
@@ -365,7 +382,6 @@ def clean_isolate_name(name):
     name = " ".join(name.split()).capitalize()
     if not name:
         return "NA"
-    # Drop non-organism descriptors that the text matchers can pick up.
     NON_ORGANISM = {
         "gram positive", "gram negative", "gram positive cocci", "gram negative rods",
         "gram variable", "no growth", "no significant growth", "no bacterial growth",
@@ -413,6 +429,13 @@ def clean_site(raw):
             dp = re.sub(r'[\)\]\}]+$', '', parts[1].strip()).strip()
             if dp:
                 detail = dp[0].upper() + dp[1:]
+    lat = re.search(r'\b(left|right|bilateral|lt|rt)\b', s, flags=re.IGNORECASE)
+    stripped = re.sub(r'\b(left|right|bilateral|lt|rt)\b', '', s, flags=re.IGNORECASE)
+    stripped = re.sub(r'\s+', ' ', stripped).strip(' -,')
+    if stripped:
+        if detail == "NA" and lat:
+            detail = lat.group(1).capitalize()
+        s = stripped
     s = (s[0].upper() + s[1:]) if s else "NA"
     return s, detail
 
@@ -462,7 +485,7 @@ def _extract_susceptibility(pdf):
         except Exception:
             pass
         try:
-            for w in page.extract_words():  # genus-only heading (italic species often drops out)
+            for w in page.extract_words():
                 t = w["text"].strip()
                 if len(t) >= 5 and t[:1].isupper() and t.isalpha():
                     g = t.lower()
@@ -481,7 +504,7 @@ def _extract_susceptibility(pdf):
     order_keys = [o for o, _ in orgs]
     susc = {}
     for torder, res in tables:
-        i = bisect.bisect_left(order_keys, torder) - 1  # nearest organism above the table
+        i = bisect.bisect_left(order_keys, torder) - 1
         if i >= 0:
             iso = orgs[i][1]
             d = susc.setdefault(iso, {})
@@ -510,6 +533,7 @@ def parse_pdf_metadata(file_object):
     with pdfplumber.open(file_object) as pdf:
         raw_text = "".join((page.extract_text() or "") + "\n" for page in pdf.pages)
         susc = _extract_susceptibility(pdf)
+    clinic_val = clinic_from_report(raw_text)
 
     cp_key = normalize_cp(re.search(r'Our Ref:\s*(?:CP\s*)?(\d{2}-\d{4,5})', raw_text, re.IGNORECASE))
     lab_ref_val = f"CP {cp_key}" if cp_key else "NA"
@@ -586,6 +610,7 @@ def parse_pdf_metadata(file_object):
             })
     for rec in records:
         rec["_susc"] = susc_for(rec["_isolate_key"], susc)
+        rec["_clinic"] = clinic_val
     return records
 
 
@@ -644,7 +669,6 @@ def build_ast_lookup(file_object):
                 "Clinic": row[AST_CLINIC_COL] if AST_CLINIC_COL < len(row) and row[AST_CLINIC_COL] is not None else "NA",
                 "MALDI Score": maldi_val,
                 "IsolateRaw": str(iso).strip(),
-                # Sheet-side metadata, kept for cross-checking against the report.
                 "Species": cell_or_na(row, AST_SPECIES_COL),
                 "Breed": normalize_breed(cell_or_na(row, AST_BREED_COL)),
                 "Sex": sex_a,
@@ -681,7 +705,7 @@ def _values_agree(field, pv, av):
         return True
     if field in FUZZY_FIELDS:
         tp, ta = _tokens(pv), _tokens(av)
-        if tp and ta and (tp <= ta or ta <= tp):  # one is a subset of the other
+        if tp and ta and (tp <= ta or ta <= tp):
             return True
     return False
 
@@ -702,7 +726,6 @@ def cross_check(rec, vals):
 # 8. MERGE (PDF metadata + AST antibiotics, with cross-check)
 # ============================================================================
 def build_dataframe(pdf_records, ast_lookup):
-    # What CPs / isolate names does the sheet actually contain?
     cp_isos = {}
     for (cp, _iso), entry in ast_lookup.items():
         cp_isos.setdefault(cp, set()).add(entry.get("IsolateRaw", _iso))
@@ -714,7 +737,6 @@ def build_dataframe(pdf_records, ast_lookup):
         merged = {col: rec[col] for col in PDF_COLUMNS}
         merged["Gram Stain"] = gram_status(rec["Isolate"])
         if key in ast_lookup:
-            # Matched: pull in susceptibility + clinic + MALDI and cross-check.
             vals = ast_lookup[key]
             diffs = cross_check(rec, vals)
             if diffs:
@@ -723,23 +745,26 @@ def build_dataframe(pdf_records, ast_lookup):
             merged["MALDI Score"] = vals.get("MALDI Score", "NA")
             for abx in CANON_ABBREVS:
                 merged[abx] = vals.get(abx, "NA")
+            # The sheet has no column for these, so read them from the report.
+            rec_susc = rec.get("_susc", {})
+            for abx in REPORT_ONLY_ABX:
+                merged[abx] = rec_susc.get(abx, "NA")
         else:
-            # Unmatched: keep the report in the master with blank susceptibility, and flag it.
             label = f'{rec["Lab Reference"]}: {rec["Isolate"]}'
             if rec["_cp_key"] in cp_set:
                 sheet_has = ", ".join(sorted(cp_isos.get(rec["_cp_key"], set())))
                 name_diff.append(f'{label} (sheet has: {sheet_has})')
             else:
                 not_in_sheet.append(label)
-            merged["Clinic"] = "NA"
+            merged["Clinic"] = rec.get("_clinic", "NA")
             merged["MALDI Score"] = "NA"
             rec_susc = rec.get("_susc", {})
-            for abx in CANON_ABBREVS:
-                merged[abx] = rec_susc.get(abx, "NA")  # fall back to the report's own susceptibility
+            for abx in ALL_ABX:
+                merged[abx] = rec_susc.get(abx, "NA")
         rows.append(merged)
     df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
     if not df.empty:
-        df = df.drop_duplicates(subset=["Lab Reference", "Isolate"] + CANON_ABBREVS, keep="first")
+        df = df.drop_duplicates(subset=["Lab Reference", "Isolate"] + ALL_ABX, keep="first")
         df = df.sort_values(["Lab Reference", "Isolate"]).reset_index(drop=True)
     return df, not_in_sheet, name_diff, discrepancies
 
@@ -759,12 +784,12 @@ def build_from_pdf_only(pdf_files):
     rows = []
     for rec in records:
         merged = {col: rec[col] for col in PDF_COLUMNS}
-        merged["Clinic"] = "NA"
+        merged["Clinic"] = rec.get("_clinic", "NA")
         merged["Gram Stain"] = gram_status(rec["Isolate"])
         merged["MALDI Score"] = "NA"
         rec_susc = rec.get("_susc", {})
-        for abx in CANON_ABBREVS:
-            merged[abx] = rec_susc.get(abx, "NA")  # susceptibility read from the report
+        for abx in ALL_ABX:
+            merged[abx] = rec_susc.get(abx, "NA")
         rows.append(merged)
     df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
     if not df.empty:
@@ -794,7 +819,7 @@ def build_excel(df):
     ws = wb.active
     ws.title = "AST Surveillance"
     cols = list(df.columns)
-    abx_set = set(CANON_ABBREVS)
+    abx_set = set(ALL_ABX)
     header_font = Font(bold=True, color="103A6B", size=11)
     header_border = Border(bottom=Side(style="medium", color="1D6FD6"))
     fill_map = {"S": "C6EFCE", "I": "FFEB9C", "R": "FFC7CE", "INTR": "BFE3F7"}
@@ -949,7 +974,7 @@ with tab1:
             section("Master dataset")
             preview = final_df.copy()
             preview.index = range(1, len(preview) + 1)
-            st.dataframe(preview.style.map(cell_css, subset=CANON_ABBREVS), use_container_width=True)
+            st.dataframe(preview.style.map(cell_css, subset=ALL_ABX), use_container_width=True)
             aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
             fname = f"AST_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
             st.download_button("Download master Excel", build_excel(final_df), fname,
@@ -959,7 +984,7 @@ with tab1:
         typo_map, intr_map = {}, {}
         for _, r in final_df.iterrows():
             key = f'{r["Lab Reference"]}: {r["Isolate"]}'
-            for abx in CANON_ABBREVS:
+            for abx in ALL_ABX:
                 v = r[abx]
                 if v == "INTR":
                     intr_map.setdefault(key, []).append(abx)
@@ -1022,7 +1047,7 @@ with tab2:
         st.divider()
 
         # Resistance profile, split by Gram stain
-        sir_cols = [c for c in CANON_ABBREVS if c in df.columns and df[c].isin(['S', 'I', 'R']).any()]
+        sir_cols = [c for c in ALL_ABX if c in df.columns and df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
             long_all = df[["Isolate", "Gram Stain"] + sir_cols].melt(
                 id_vars=["Isolate", "Gram Stain"], var_name="ABx", value_name="Res")
