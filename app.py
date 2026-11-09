@@ -6,7 +6,6 @@ import io
 import os
 import base64
 import openpyxl
-import plotly.express as px
 import plotly.graph_objects as go
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from datetime import datetime, timedelta, timezone
@@ -1185,29 +1184,29 @@ with tab2:
 
         st.divider()
 
-        # Breed prevalence (donuts)
+        # Breed prevalence (horizontal bars, one chart per host species)
         with st.container(border=True):
             section("Breed prevalence by host species", "One count per unique clinical case.")
             unique_demo = clean.drop_duplicates(subset=['Lab Reference'])
             host_species = [s for s in unique_demo["Species"].unique() if s not in ("NA", "nan")]
             if host_species:
-                dcols = st.columns(len(host_species))
-                for col, host in zip(dcols, host_species):
+                for host in host_species:
                     sub = unique_demo[unique_demo["Species"] == host]
-                    with col:
-                        figd = px.pie(sub, names="Breed", hole=0.58, color_discrete_sequence=BLUE_SEQ)
-                        figd.update_traces(textposition="outside", textinfo="label+percent",
-                            textfont=dict(size=14, family="Inter", color=INK),
-                            marker=dict(line=dict(color="white", width=2)),
-                            hovertemplate="<b>%{label}</b><br>Cases: %{value}<extra></extra>")
-                        figd.update_layout(height=440, template="simple_white", paper_bgcolor="white",
-                            title=dict(text=f"<b>{host} breeds</b>", x=0.5, xanchor="center",
-                                       font=dict(size=19, color=BLUE_800)),
-                            font=dict(color=INK, size=14.5, family="Inter"),
-                            hoverlabel=dict(font=dict(size=16, family="Inter"), bgcolor="white", bordercolor=LINE),
-                            showlegend=False, margin=dict(t=64, b=34, l=24, r=24),
-                            annotations=[dict(text=f"<b>{len(sub)}</b><br>cases", x=0.5, y=0.5,
-                                              font=dict(size=17, color=BLUE_700), showarrow=False)])
-                        st.plotly_chart(figd, use_container_width=True)
+                    b_counts = sub["Breed"].value_counts().sort_values(ascending=True)
+                    yb = b_counts.index.tolist()
+                    xb = [int(v) for v in b_counts.values]
+                    st.markdown(
+                        f"<div style='color:{BLUE_800};font-size:1.05rem;font-weight:800;"
+                        f"margin:0.5rem 0 0.15rem;'>{host} breeds "
+                        f"<span style='font-weight:600;'>({len(sub)} cases)</span></div>",
+                        unsafe_allow_html=True)
+                    figb = go.Figure(go.Bar(orientation="h", y=yb, x=xb, marker_color=BLUE_500,
+                        marker_line_width=0, text=xb, textposition="outside",
+                        textfont=dict(size=16, color=INK), cliponaxis=False,
+                        hovertemplate="<b>%{y}</b><br>Cases: %{x}<extra></extra>"))
+                    style_fig(figb, max(160, 34 * len(yb)), bottom=30)
+                    set_titles(figb, "<b>Number of cases</b>", "")
+                    figb.update_xaxes(range=[0, (max(xb) if xb else 1) * 1.2], dtick=1)
+                    st.plotly_chart(figb, use_container_width=True)
             else:
                 st.info("No host-species demographic data available.")
