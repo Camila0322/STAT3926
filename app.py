@@ -1200,7 +1200,7 @@ with tab2:
                         f"margin:0.5rem 0 0.15rem;'>{host} breeds "
                         f"<span style='font-weight:600;'>({len(sub)} cases)</span></div>",
                         unsafe_allow_html=True)
-                    figb = go.Figure(go.Bar(orientation="h", y=yb, x=xb, marker_color=BLUE_500,
+                    figb = go.Figure(go.Bar(orientation="h", y=yb, x=xb, marker_color=BLUE_800,
                         marker_line_width=0, text=xb, textposition="outside",
                         textfont=dict(size=16, color=INK), cliponaxis=False,
                         hovertemplate="<b>%{y}</b><br>Cases: %{x}<extra></extra>"))
