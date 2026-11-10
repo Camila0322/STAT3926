@@ -734,7 +734,18 @@ def parse_pdf_metadata(file_object):
         susc = _extract_susceptibility(pdf)
     clinic_val = clinic_from_report(raw_text)
 
-    cp_key = normalize_cp(re.search(r'Our Ref:\s*(?:CP\s*)?(\d{2}-\d{4,5})', raw_text, re.IGNORECASE))
+    # Lab Reference (CP number): try the labelled form first, then any CP in the text,
+    # then a bare CP-shaped token, and finally the filename (named with the CP).
+    fname = getattr(file_object, "name", "") or getattr(file_object, "filename", "") or ""
+    cp_key = None
+    for pat, src in ((r'Our Ref[:.]?\s*(?:CP\s*)?(\d{2}-\d{4,5})', raw_text),
+                     (r'\bCP[\s:#]*(\d{2}-\d{4,5})', raw_text),
+                     (r'\b(\d{2}-\d{4,5})\b', raw_text),
+                     (r'(\d{2}-\d{4,5})', str(fname))):
+        m = re.search(pat, src, re.IGNORECASE)
+        if m:
+            cp_key = m.group(1)
+            break
     lab_ref_val = f"CP {cp_key}" if cp_key else "NA"
 
     rd = re.search(r'Report date:\s*(.*?)(?=\s*Page:|\n)', raw_text, re.IGNORECASE)
@@ -807,6 +818,22 @@ def parse_pdf_metadata(file_object):
                 "_cp_key": cp_key,
                 "_isolate_key": iso_clean.strip().lower(),
             })
+    # Reports with no isolate (no significant growth) produce no rows above. Keep a
+    # marker so they can be flagged and counted instead of silently disappearing.
+    if not records:
+        low = raw_text.lower()
+        if any(k in low for k in ("no significant growth", "no bacterial growth", "no growth")):
+            reason = "No significant growth"
+        else:
+            reason = "No isolate extracted"
+        records.append({
+            "Arrival Date": arrival_date_val, "Report Date": report_date_val,
+            "Lab Reference": lab_ref_val, "Species": species_val, "Breed": breed_val,
+            "Age": age_val, "Sex": sex_val, "Neutered": neutered_val,
+            "Sample Type": "NA", "Site": "NA", "Sample Site (Detailed)": "NA",
+            "Purity": "NA", "Isolate": reason, "_cp_key": cp_key,
+            "_isolate_key": "", "_no_growth": reason,
+        })
     for rec in records:
         rec["_susc"] = susc_for(rec["_isolate_key"], susc)
         rec["_clinic"] = clinic_val
@@ -932,6 +959,8 @@ def build_dataframe(pdf_records, ast_lookup):
 
     rows, not_in_sheet, name_diff, discrepancies = [], [], [], []
     for rec in pdf_records:
+        if rec.get("_no_growth"):     # no-growth markers are not isolate rows
+            continue
         key = (rec["_cp_key"], rec["_isolate_key"])
         merged = {col: rec[col] for col in PDF_COLUMNS}
         merged["Gram Stain"] = gram_status(rec["Isolate"])
@@ -982,6 +1011,8 @@ def build_from_pdf_only(pdf_files):
             bad.append(f"{f.name}: {e}")
     rows = []
     for rec in records:
+        if rec.get("_no_growth"):     # no-growth markers are not isolate rows
+            continue
         merged = {col: rec[col] for col in PDF_COLUMNS}
         merged["Clinic"] = rec.get("_clinic", "NA")
         merged["Gram Stain"] = gram_status(rec["Isolate"])
@@ -1116,7 +1147,7 @@ with tab1:
         if not pdf_files:
             st.error("Upload the PDF reports. Add the AST logging sheet as well to cross-check and add susceptibility.")
         else:
-            pdf_records, bad, cp_files = [], [], {}
+            pdf_records, bad, cp_files, no_cp = [], [], {}, []
             total = len(pdf_files)
             pb = st.progress(0.0, text=f"Reading reports (0/{total})…")
             for i, f in enumerate(pdf_files):
@@ -1125,11 +1156,16 @@ with tab1:
                     recs = parse_pdf_metadata(f)
                     for cp in {r["_cp_key"] for r in recs if r["_cp_key"]}:
                         cp_files.setdefault(cp, []).append(f.name)
+                    if recs and not any(r["_cp_key"] for r in recs):
+                        no_cp.append(f.name)
                     pdf_records.extend(recs)
                 except Exception as e:
                     bad.append(f"{f.name}: {e}")
             pb.progress(1.0, text="Done")
             dupes = find_duplicate_uploads(cp_files, pdf_files)
+            # Reports with no isolate (no growth): listed so the case count adds up.
+            no_growth = sorted({f'{r["Lab Reference"]} ({r["_no_growth"]})'
+                                for r in pdf_records if r.get("_no_growth")})
 
             if ast_file:
                 # ---- Reports cross-checked against the AST sheet ----
@@ -1139,7 +1175,8 @@ with tab1:
                     st.warning("No isolates matched between the PDF(s) and the AST sheet. Check the CP numbers and isolate names line up.")
                 else:
                     st.session_state.update(processed_data=final_df, skipped=not_in_sheet, name_diff=name_diff,
-                                            bad=bad, dupes=dupes, discrepancies=discrepancies, mode="matched")
+                                            bad=bad, dupes=dupes, discrepancies=discrepancies, no_cp=no_cp,
+                                            no_growth=no_growth, mode="matched")
             else:
                 # ---- Reports only ----
                 final_df, bad2, _ = build_from_pdf_only(pdf_files)
@@ -1148,7 +1185,8 @@ with tab1:
                     st.warning("No isolates could be read from the uploaded reports.")
                 else:
                     st.session_state.update(processed_data=final_df, skipped=[], name_diff=[], bad=bad,
-                                            dupes=dupes, discrepancies=[], mode="pdf")
+                                            dupes=dupes, discrepancies=[], no_cp=no_cp,
+                                            no_growth=no_growth, mode="pdf")
 
     if 'processed_data' in st.session_state:
         final_df = st.session_state['processed_data']
@@ -1167,6 +1205,15 @@ with tab1:
         if st.session_state.get('dupes'):
             render_callout("Possible duplicate uploads", st.session_state['dupes'],
                            "#d99000", "#FBF1D6", ordered=False)
+
+        if st.session_state.get('no_cp'):
+            render_callout("No CP number found (shown as NA; check these reports)",
+                           sorted(st.session_state['no_cp']), "#d99000", "#FBF1D6", ordered=False)
+
+        if st.session_state.get('no_growth'):
+            ng = st.session_state['no_growth']
+            render_callout(f"Reports with no isolate, not in the table ({len(ng)})",
+                           ng, "#6c6b6a", "#EEEAE6", ordered=False)
 
         if st.session_state.get('discrepancies'):
             render_callout("Report and AST sheet disagree (check these)", st.session_state['discrepancies'],
