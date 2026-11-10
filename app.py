@@ -383,6 +383,43 @@ def clean_boilerplate(text):
     return "\n".join(out)
 
 
+# Bacterial isolate name normalization: fixes spelling variants (and casing) so the
+# same organism does not appear as several isolate types. Edit these maps as needed.
+GENUS_FIX = {
+    "staphyloccus": "Staphylococcus", "staphylococus": "Staphylococcus",
+    "staphyloccocus": "Staphylococcus", "staphylococccus": "Staphylococcus",
+    "streptococccus": "Streptococcus", "streptoccocus": "Streptococcus",
+    "streptoccoccus": "Streptococcus", "streptococus": "Streptococcus",
+    "pseudomona": "Pseudomonas", "pseudomonos": "Pseudomonas",
+    "escherchia": "Escherichia", "echerichia": "Escherichia",
+    "enterococccus": "Enterococcus", "enterococus": "Enterococcus",
+}
+SPECIES_FIX = {"dysagalactiae": "dysgalactiae", "pseudointermedius": "pseudintermedius"}
+# Old name -> current name, by genus (S. intermedius group in companion animals).
+SPECIES_MERGE = {("staphylococcus", "intermedius"): "pseudintermedius"}
+
+
+def normalize_organism(org):
+    if org is None:
+        return "NA"
+    o = re.sub(r'\s+', ' ', str(org)).strip()
+    if not o or o.upper() in ("NA", "N/A"):
+        return "NA"
+    words = o.split()
+    genus = GENUS_FIX.get(words[0].lower(), words[0].capitalize())
+    gkey = genus.lower()
+    out = [genus]
+    for i, w in enumerate(words[1:]):
+        parts = []
+        for p in w.split("/"):          # species may be slash-joined alternatives
+            pl = SPECIES_FIX.get(p.lower(), p.lower())
+            if i == 0:
+                pl = SPECIES_MERGE.get((gkey, pl), pl)
+            parts.append(pl)
+        out.append("/".join(parts))
+    return " ".join(out)
+
+
 def clean_isolate_name(name):
     if name is None or (isinstance(name, float) and pd.isna(name)):
         return "NA"
@@ -401,7 +438,7 @@ def clean_isolate_name(name):
     }
     if name.lower() in NON_ORGANISM:
         return "NA"
-    return name
+    return normalize_organism(name)
 
 
 def cell_or_na(row, idx):
