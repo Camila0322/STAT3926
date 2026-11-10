@@ -229,7 +229,7 @@ ALL_ABX = CANON_ABBREVS + REPORT_ONLY_ABX
 OUTPUT_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Clinic", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity",
-    "Isolate", "Gram Stain", "MALDI Score",
+    "Isolate", "Gram reaction", "MALDI Score",
 ] + ALL_ABX
 
 GRAM_POSITIVE_GENERA = {
@@ -963,7 +963,7 @@ def build_dataframe(pdf_records, ast_lookup):
             continue
         key = (rec["_cp_key"], rec["_isolate_key"])
         merged = {col: rec[col] for col in PDF_COLUMNS}
-        merged["Gram Stain"] = gram_status(rec["Isolate"])
+        merged["Gram reaction"] = gram_status(rec["Isolate"])
         if key in ast_lookup:
             vals = ast_lookup[key]
             diffs = cross_check(rec, vals)
@@ -1015,7 +1015,7 @@ def build_from_pdf_only(pdf_files):
             continue
         merged = {col: rec[col] for col in PDF_COLUMNS}
         merged["Clinic"] = rec.get("_clinic", "NA")
-        merged["Gram Stain"] = gram_status(rec["Isolate"])
+        merged["Gram reaction"] = gram_status(rec["Isolate"])
         merged["MALDI Score"] = "NA"
         rec_susc = rec.get("_susc", {})
         for abx in ALL_ABX:
@@ -1057,7 +1057,8 @@ def build_excel(df):
     typo_font = Font(bold=True, color="FFFFFF")
     for j, name in enumerate(cols, 1):
         is_abx = name in abx_set
-        c = ws.cell(1, j, ABX_FULL.get(name, name) if is_abx else name)
+        header = ABX_FULL.get(name, name) if is_abx else ("Host species" if name == "Species" else name)
+        c = ws.cell(1, j, header)
         c.font = header_font
         c.border = header_border
         if is_abx:   # full drug name, rotated so the sheet stays compact
@@ -1161,7 +1162,7 @@ with tab1:
                     pdf_records.extend(recs)
                 except Exception as e:
                     bad.append(f"{f.name}: {e}")
-            pb.progress(1.0, text="Done")
+            pb.progress(0.8, text="Reports read. Building the master table…")
             dupes = find_duplicate_uploads(cp_files, pdf_files)
             # Reports with no isolate (no growth): listed so the case count adds up.
             no_growth = sorted({f'{r["Lab Reference"]} ({r["_no_growth"]})'
@@ -1174,9 +1175,12 @@ with tab1:
                 if final_df.empty:
                     st.warning("No isolates matched between the PDF(s) and the AST sheet. Check the CP numbers and isolate names line up.")
                 else:
+                    pb.progress(0.9, text="Preparing the Excel file (this can take a few seconds for large batches)…")
+                    xlsx = build_excel(final_df)
+                    pb.progress(1.0, text="Done. Opening results…")
                     st.session_state.update(processed_data=final_df, skipped=not_in_sheet, name_diff=name_diff,
                                             bad=bad, dupes=dupes, discrepancies=discrepancies, no_cp=no_cp,
-                                            no_growth=no_growth, mode="matched")
+                                            no_growth=no_growth, excel_bytes=xlsx, mode="matched")
             else:
                 # ---- Reports only ----
                 final_df, bad2, _ = build_from_pdf_only(pdf_files)
@@ -1184,7 +1188,11 @@ with tab1:
                 if final_df.empty:
                     st.warning("No isolates could be read from the uploaded reports.")
                 else:
+                    pb.progress(0.9, text="Preparing the Excel file (this can take a few seconds for large batches)…")
+                    xlsx = build_excel(final_df)
+                    pb.progress(1.0, text="Done. Opening results…")
                     st.session_state.update(processed_data=final_df, skipped=[], name_diff=[], bad=bad,
+                                            excel_bytes=xlsx,
                                             dupes=dupes, discrepancies=[], no_cp=no_cp,
                                             no_growth=no_growth, mode="pdf")
 
@@ -1202,6 +1210,23 @@ with tab1:
         if mode_msg:
             st.markdown(f"<div class='mode-note'>{mode_msg}</div>", unsafe_allow_html=True)
 
+        with st.container(border=True):
+            section("Master dataset")
+            preview = final_df.copy()
+            preview.index = range(1, len(preview) + 1)
+            abx_present = [c for c in ALL_ABX if c in preview.columns]
+            rename_map = {c: ABX_FULL.get(c, c) for c in abx_present}
+            rename_map["Species"] = "Host species"
+            preview = preview.rename(columns=rename_map)
+            subset_full = [ABX_FULL.get(c, c) for c in abx_present]
+            st.dataframe(preview.style.map(cell_css, subset=subset_full), use_container_width=True)
+            aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
+            fname = f"AST_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
+            xlsx = st.session_state.get("excel_bytes") or build_excel(final_df)
+            st.download_button("Download master Excel", xlsx, fname,
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        # ---- Flags and checks: kept below the table so the top stays uncluttered ----
         if st.session_state.get('dupes'):
             render_callout("Possible duplicate uploads", st.session_state['dupes'],
                            "#d99000", "#FBF1D6", ordered=False)
@@ -1218,19 +1243,6 @@ with tab1:
         if st.session_state.get('discrepancies'):
             render_callout("Report and AST sheet disagree (check these)", st.session_state['discrepancies'],
                            "#c77f00", "#F7EAD2", ordered=False)
-
-        with st.container(border=True):
-            section("Master dataset")
-            preview = final_df.copy()
-            preview.index = range(1, len(preview) + 1)
-            abx_present = [c for c in ALL_ABX if c in preview.columns]
-            preview = preview.rename(columns={c: ABX_FULL.get(c, c) for c in abx_present})
-            subset_full = [ABX_FULL.get(c, c) for c in abx_present]
-            st.dataframe(preview.style.map(cell_css, subset=subset_full), use_container_width=True)
-            aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
-            fname = f"AST_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
-            st.download_button("Download master Excel", build_excel(final_df), fname,
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         # Grouped review lists from the final table.
         typo_map, intr_map = {}, {}
