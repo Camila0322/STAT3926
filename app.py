@@ -1144,6 +1144,7 @@ with tab1:
                                          label_visibility="collapsed")
         run = st.button("Process")
 
+    pb = None   # progress bar; completed to 100% only once the table and button render
     if run:
         if not pdf_files:
             st.error("Upload the PDF reports. Add the AST logging sheet as well to cross-check and add susceptibility.")
@@ -1152,7 +1153,8 @@ with tab1:
             total = len(pdf_files)
             pb = st.progress(0.0, text=f"Reading reports (0/{total})…")
             for i, f in enumerate(pdf_files):
-                pb.progress(i / total, text=f"Reading ({i + 1}/{total}): {f.name}")
+                # Reading fills the bar to 70%, leaving room for the build + Excel stages.
+                pb.progress(0.7 * i / total, text=f"Reading ({i + 1}/{total}): {f.name}")
                 try:
                     recs = parse_pdf_metadata(f)
                     for cp in {r["_cp_key"] for r in recs if r["_cp_key"]}:
@@ -1162,7 +1164,7 @@ with tab1:
                     pdf_records.extend(recs)
                 except Exception as e:
                     bad.append(f"{f.name}: {e}")
-            pb.progress(0.8, text="Reports read. Building the master table…")
+            pb.progress(0.75, text="Reports read. Building the master table…")
             dupes = find_duplicate_uploads(cp_files, pdf_files)
             # Reports with no isolate (no growth): listed so the case count adds up.
             no_growth = sorted({f'{r["Lab Reference"]} ({r["_no_growth"]})'
@@ -1175,9 +1177,9 @@ with tab1:
                 if final_df.empty:
                     st.warning("No isolates matched between the PDF(s) and the AST sheet. Check the CP numbers and isolate names line up.")
                 else:
-                    pb.progress(0.9, text="Preparing the Excel file (this can take a few seconds for large batches)…")
+                    pb.progress(0.85, text="Preparing the Excel file (this can take a few seconds for large batches)…")
                     xlsx = build_excel(final_df)
-                    pb.progress(1.0, text="Done. Opening results…")
+                    pb.progress(0.95, text="Almost done. Opening results…")
                     st.session_state.update(processed_data=final_df, skipped=not_in_sheet, name_diff=name_diff,
                                             bad=bad, dupes=dupes, discrepancies=discrepancies, no_cp=no_cp,
                                             no_growth=no_growth, excel_bytes=xlsx, mode="matched")
@@ -1188,9 +1190,9 @@ with tab1:
                 if final_df.empty:
                     st.warning("No isolates could be read from the uploaded reports.")
                 else:
-                    pb.progress(0.9, text="Preparing the Excel file (this can take a few seconds for large batches)…")
+                    pb.progress(0.85, text="Preparing the Excel file (this can take a few seconds for large batches)…")
                     xlsx = build_excel(final_df)
-                    pb.progress(1.0, text="Done. Opening results…")
+                    pb.progress(0.95, text="Almost done. Opening results…")
                     st.session_state.update(processed_data=final_df, skipped=[], name_diff=[], bad=bad,
                                             excel_bytes=xlsx,
                                             dupes=dupes, discrepancies=[], no_cp=no_cp,
@@ -1276,6 +1278,10 @@ with tab1:
         if st.session_state.get('bad'):
             for b in st.session_state['bad']:
                 st.error(b)
+
+        # The table and download are now on screen, so the bar completes to 100%.
+        if pb is not None:
+            pb.progress(1.0, text="Complete")
 
 with tab2:
     if 'processed_data' not in st.session_state:
@@ -1421,10 +1427,11 @@ with tab2:
                     xb = [int(v) for v in b_counts.values]
                     b_cust = [[_org_breakdown(clean[(clean["Species"] == host) &
                                                     (clean["Breed"] == breed)])] for breed in yb]
+                    n_an = len(sub)
                     st.markdown(
                         f"<div style='color:{BLUE_800};font-size:1.05rem;font-weight:800;"
                         f"margin:0.5rem 0 0.15rem;'>{host} breeds "
-                        f"<span style='font-weight:600;'>({len(sub)} animals)</span></div>",
+                        f"<span style='font-weight:600;'>({n_an} animal{'s' if n_an != 1 else ''})</span></div>",
                         unsafe_allow_html=True)
                     figb = go.Figure(go.Bar(orientation="h", y=yb, x=xb, marker_color=BLUE_800,
                         marker_line_width=0, text=xb, textposition="outside",
