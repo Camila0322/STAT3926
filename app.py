@@ -433,10 +433,8 @@ SITE_SYNONYMS = {
 }
 
 # Anatomical direction / plane words. When one of these sits in front of a site word
-# ("Ventral abdomen", "Dorsal back", "Lateral carpus") it is a modifier, not the site:
-# the word after it is the site, and the direction moves into the detailed column.
-# Laterality (left/right) is handled here too. A direction word on its own (bare
-# "Ventral", with no site word after it) is left untouched.
+# ("Ventral abdomen", "Lateral carpus") it is a modifier: the word after it is the
+# site and the direction moves to the detailed column. Laterality is handled here too.
 SITE_MODIFIERS = {
     "lt": "Left", "rt": "Right",
     "left": "Left", "right": "Right", "bilateral": "Bilateral",
@@ -444,64 +442,137 @@ SITE_MODIFIERS = {
     "medial": "Medial", "cranial": "Cranial", "caudal": "Caudal",
     "rostral": "Rostral", "proximal": "Proximal", "distal": "Distal",
 }
+LATERALITY = {"Left", "Right", "Bilateral"}
 _MOD_RE = re.compile(r'\b(' + '|'.join(SITE_MODIFIERS) + r')\b', flags=re.IGNORECASE)
 
-# Words describing a lesion / finding rather than an anatomical site. When the main
-# part of the field is only these ("abscess + discharging sinus (skin)") and a real
-# site sits in the brackets, the bracket is the site and the lesion goes to detail.
+# Lesion / finding words (not an anatomical site) and procedure / sample-handling
+# words. These never win over a real site: when the main text is only these and a
+# real site sits alongside, the site is kept and these move to the detailed column.
 LESION_WORDS = {
     "abscess", "sinus", "discharging", "draining", "discharge", "mass", "lesion",
     "wound", "ulcer", "ulcerated", "nodule", "swelling", "cyst", "fistula", "pustule",
-    "pus", "exudate", "lump", "growth", "tract", "scab", "crust", "erosion", "papule",
+    "pus", "exudate", "lump", "growth", "tract", "tracts", "scab", "crust", "erosion",
+    "papule", "purulent",
 }
-_LESION_SPLIT = re.compile(r'[+&/,;]|\band\b', flags=re.IGNORECASE)
+PROCEDURE_WORDS = {
+    "flush", "flushed", "flushing", "debridement", "debride", "debrided", "lavage",
+    "biopsy", "aspirate", "aspiration", "wash", "washed", "voided", "cysto", "op",
+    "surgical", "repair", "culture", "exit", "pre", "post", "free", "catch", "punch",
+    "swab", "swabs", "gel", "plain", "tube", "site", "area", "screw", "screws",
+    "from", "and", "teca", "tecalo", "tecabo", "bo",
+}
+_QUALIFIER = LESION_WORDS | PROCEDURE_WORDS
+# Separators split site from detail: comma / colon / semicolon / pipe / slash, or a
+# SPACED hyphen. A word-internal hyphen (PRE-LAVAGE, PERI-ORAL) is NOT a split point.
+_SPLIT_RE = re.compile(r'\s*[,:;|/]\s*|\s+-\s+')
+_TOKEN_RE = re.compile(r"[A-Za-z]+")
+_COUNT_RE = re.compile(r'^\d+\s*x$', flags=re.IGNORECASE)
 
 
-def _is_lesion_only(text):
-    toks = [w.strip(".-':").lower() for w in _LESION_SPLIT.sub(' ', text).split()]
-    toks = [w for w in toks if w]
-    return bool(toks) and all(w in LESION_WORDS for w in toks)
+def _strippable(word):
+    """A count prefix (3X) or a word made only of lesion / procedure tokens."""
+    if _COUNT_RE.match(word):
+        return True
+    alts = [a.lower() for a in _TOKEN_RE.findall(word)]
+    return bool(alts) and all(a in _QUALIFIER for a in alts)
+
+
+def _classify(text):
+    core = _MOD_RE.sub(' ', text)
+    toks = [t.lower() for t in _TOKEN_RE.findall(core)]
+    if not toks:
+        return 'modifier' if _TOKEN_RE.findall(text) else 'empty'
+    if all(t in LESION_WORDS for t in toks):
+        return 'lesion'
+    if all(t in PROCEDURE_WORDS for t in toks):
+        return 'procedure'
+    return 'site'
+
+
+def _cap_detail(text):
+    text = text.strip(" ,;-/&+")
+    if not text:
+        return "NA"
+    return ", ".join(p.strip().capitalize() for p in text.split(",") if p.strip()) or "NA"
+
+
+def _cap_phrase(text):
+    """Whole phrase in sentence case, kept as one unit (not comma-split)."""
+    text = re.sub(r'\s+', ' ', re.sub(r'[&/+]', ' ', text)).strip(" ,;-/&+")
+    return (text[0].upper() + text[1:].lower()) if text else "NA"
+
+
+def _join(a, b):
+    parts = [p for p in (a, b) if p and p != "NA"]
+    return ", ".join(parts)
 
 
 def clean_site(raw):
-    """Main site + detail, mirroring the PDF pipeline's parenthetical / separator split."""
+    """Main site + detail from a free-text site field. A parenthetical or post-separator
+    fragment becomes the detail; the part that is a real anatomical site is kept while
+    lesion / procedure / laterality words move to the detailed column."""
     s = str(raw).strip() if raw not in (None, "") else ""
     if not s or s.upper() in ("NA", "N/A"):
         return "NA", "NA"
-    detail = "NA"
+    # A whole field that is only a collection method / procedure (CYSTO, FREE CATCH,
+    # PUNCH BIOPSY, VOIDED) is not a site: keep it, as one phrase, in the detail.
+    if "(" not in s and not _SPLIT_RE.search(s) and _classify(s) == "procedure":
+        return "NA", _cap_phrase(s)
+    detail = ""
     m = re.search(r'^(.*?)\s*\((.*?)\)', s)
-    if m:
-        s = m.group(1).strip()
-        dp = m.group(2).strip()
-        if dp:
-            detail = dp[0].upper() + dp[1:]
+    if m and (m.group(1).strip() or m.group(2).strip()):
+        main = m.group(1).strip()
+        after = s[m.end():].strip()
+        detail = m.group(2).strip()
+        s = main or after
     else:
-        parts = re.split(r'[,/:\-;|]', s, maxsplit=1)
+        parts = _SPLIT_RE.split(s, maxsplit=1)
         if len(parts) > 1:
             s = parts[0].strip()
-            dp = re.sub(r'[\)\]\}]+$', '', parts[1].strip()).strip()
-            if dp:
-                detail = dp[0].upper() + dp[1:]
-    # If the main text is only a lesion and the brackets hold a real site, swap them.
-    if detail != "NA" and detail.strip().lower() not in SITE_MODIFIERS and _is_lesion_only(s):
-        lesion = re.sub(r'\s+', ' ', s).strip(' :.,-')
-        s, detail = detail, (lesion[0].upper() + lesion[1:] if lesion else "NA")
+            detail = re.sub(r'[\)\]\}]+$', '', parts[1].strip()).strip()
+
+    # Of the two parts, keep whichever is the better anatomical site.
+    if detail:
+        rank = {'site': 3, 'lesion': 2, 'procedure': 1, 'modifier': 0, 'empty': 0}
+        if rank[_classify(detail)] > rank[_classify(s)]:
+            s, detail = detail, s
+
+    # Strip leading / trailing qualifier words (POST-OP ABDOMINAL CAVITY -> Abdominal).
+    words = s.split()
+    lead = []
+    while len(words) > 1 and _strippable(words[0]):
+        lead.append(words.pop(0))
+    trail = []
+    while len(words) > 1 and _strippable(words[-1]):
+        trail.insert(0, words.pop())
+    if lead or trail:
+        s = " ".join(words)
+        detail = _join(detail, " ".join(lead + trail))
+
+    # Direction / laterality words are modifiers: the word after them is the site.
     found = [SITE_MODIFIERS[w.lower()] for w in _MOD_RE.findall(s)]
-    stripped = re.sub(r'\s+', ' ', _MOD_RE.sub('', s)).strip(' -,')
-    mod_text = ", ".join(dict.fromkeys(found))         # keep order, drop repeats
-    if stripped and found:
-        # "Ventral abdomen" -> site is the word after the direction, direction to detail.
-        if detail == "NA":
-            detail = mod_text
-        else:
-            detail = mod_text + ", " + detail[0].lower() + detail[1:]
-        s = stripped
-    elif found and not stripped and detail != "NA":
-        # "Ventral (interdigital paws)" -> the real site is in the brackets; direction to detail.
-        s = detail
-        detail = mod_text
-    s = (s[0].upper() + s[1:]) if s else "NA"
+    core = re.sub(r'[&/+]', ' ', _MOD_RE.sub(' ', s))
+    core = re.sub(r'\s+', ' ', core).strip(" -,&/+")
+    mod_text = ", ".join(dict.fromkeys(found))
+    if found:
+        if core:
+            detail = _join(mod_text, detail)
+            s = core
+        elif all(f in LATERALITY for f in found):
+            detail = _join(mod_text, detail)   # lone laterality is not a site
+            s = ""
+        # else: keep a bare plane word (e.g. "Ventral") as the site
+
+    s = re.sub(r'^[^0-9A-Za-z]+|[^0-9A-Za-z]+$', '', s).strip()
+    cls = _classify(s) if s else 'empty'
+    if cls in ('procedure', 'empty') or (cls == 'modifier' and s.capitalize() in LATERALITY):
+        if s and cls != 'empty':
+            detail = _join(detail, s)
+        s = ""
+
+    s = (s[0].upper() + s[1:].lower()) if s else "NA"
     s = SITE_SYNONYMS.get(s.lower().strip(), s)
+    detail = _cap_detail(detail)
     return s, detail
 
 
