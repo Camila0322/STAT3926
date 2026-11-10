@@ -1013,10 +1013,14 @@ def build_excel(df):
     typo_fill = PatternFill("solid", fgColor="FF2D2D")
     typo_font = Font(bold=True, color="FFFFFF")
     for j, name in enumerate(cols, 1):
-        c = ws.cell(1, j, name)
+        is_abx = name in abx_set
+        c = ws.cell(1, j, ABX_FULL.get(name, name) if is_abx else name)
         c.font = header_font
         c.border = header_border
-        c.alignment = Alignment(horizontal="center" if name in abx_set else "left", vertical="center")
+        if is_abx:   # full drug name, rotated so the sheet stays compact
+            c.alignment = Alignment(text_rotation=90, horizontal="center", vertical="bottom")
+        else:
+            c.alignment = Alignment(horizontal="left", vertical="center")
     for i, (_, row) in enumerate(df.iterrows(), start=2):
         for j, name in enumerate(cols, 1):
             v = row[name]
@@ -1033,11 +1037,12 @@ def build_excel(df):
     for j, name in enumerate(cols, 1):
         letter = ws.cell(1, j).column_letter
         if name in abx_set:
-            ws.column_dimensions[letter].width = 8
+            ws.column_dimensions[letter].width = 5.2
         else:
             longest = max([len(str(name))] + df[name].astype(str).map(len).tolist())
             ws.column_dimensions[letter].width = min(max(longest + 2, 10), 34)
-    ws.row_dimensions[1].height = 22
+    abx_hdr_len = max([len(ABX_FULL.get(a, a)) for a in abx_set if a in cols] + [0])
+    ws.row_dimensions[1].height = min(max(abx_hdr_len * 6.2, 22), 215)
     ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
@@ -1159,7 +1164,10 @@ with tab1:
             section("Master dataset")
             preview = final_df.copy()
             preview.index = range(1, len(preview) + 1)
-            st.dataframe(preview.style.map(cell_css, subset=ALL_ABX), use_container_width=True)
+            abx_present = [c for c in ALL_ABX if c in preview.columns]
+            preview = preview.rename(columns={c: ABX_FULL.get(c, c) for c in abx_present})
+            subset_full = [ABX_FULL.get(c, c) for c in abx_present]
+            st.dataframe(preview.style.map(cell_css, subset=subset_full), use_container_width=True)
             aus_time = datetime.now(timezone.utc) + timedelta(hours=10)
             fname = f"AST_Surveillance_{aus_time.strftime('%Y%m%d')}.xlsx"
             st.download_button("Download master Excel", build_excel(final_df), fname,
