@@ -408,9 +408,16 @@ GENUS_FIX = {
     "escherchia": "Escherichia", "echerichia": "Escherichia",
     "enterococccus": "Enterococcus", "enterococus": "Enterococcus",
 }
-SPECIES_FIX = {"dysagalactiae": "dysgalactiae", "pseudointermedius": "pseudintermedius"}
+SPECIES_FIX = {
+    "dysagalactiae": "dysgalactiae", "pseudointermedius": "pseudintermedius",
+    "baumanii": "baumannii", "bugundensis": "bugandensis",
+    "pneumonaie": "pneumoniae", "maltophila": "maltophilia",
+}
 # Old name -> current name, by genus (S. intermedius group in companion animals).
 SPECIES_MERGE = {("staphylococcus", "intermedius"): "pseudintermedius"}
+# A trailing standalone roman numeral or single letter is a MALDI confidence /
+# isolate code ("Pasteurella multocida I"), not part of the species name.
+_TRAIL_CODE = re.compile(r'(?i)^(i{1,3}|iv|v|[a-z])$')
 
 
 def normalize_organism(org):
@@ -420,6 +427,8 @@ def normalize_organism(org):
     if not o or o.upper() in ("NA", "N/A"):
         return "NA"
     words = o.split()
+    if len(words) >= 3 and _TRAIL_CODE.match(words[-1]):
+        words = words[:-1]
     genus = GENUS_FIX.get(words[0].lower(), words[0].capitalize())
     gkey = genus.lower()
     out = [genus]
