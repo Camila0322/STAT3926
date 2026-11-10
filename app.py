@@ -426,6 +426,9 @@ def normalize_organism(org):
     o = re.sub(r'\s+', ' ', str(org)).strip()
     if not o or o.upper() in ("NA", "N/A"):
         return "NA"
+    # Any spelling of (pseud)(o)(-/ )inte(r)medius -> pseudintermedius (S. intermedius group).
+    o = re.sub(r'pseud[o]?[\s\-]*inte[r]?medius', 'pseudintermedius', o, flags=re.IGNORECASE)
+    o = re.sub(r'(staph\w*\s+)inte[r]?medius\b', r'\1pseudintermedius', o, flags=re.IGNORECASE)
     words = o.split()
     if len(words) >= 3 and _TRAIL_CODE.match(words[-1]):
         words = words[:-1]
@@ -1291,9 +1294,7 @@ with tab2:
 
             # One organism at a time (cumulative antibiogram), defaulting to S. pseudintermedius.
             with st.container(border=True):
-                section("Resistance profile by organism",
-                        "A cumulative antibiogram for one organism: each bar is 100% of the isolates "
-                        "tested for that drug, sorted by resistance. Hover a segment to see the isolates.")
+                section("Resistance profile by organism")
                 orgs = sorted(long_all["Isolate"].unique())
                 if orgs:
                     default = next((o for o in orgs if "pseudintermedius" in o.lower()), orgs[0])
@@ -1310,9 +1311,7 @@ with tab2:
 
             # All organisms pooled, as a high-level overview.
             with st.container(border=True):
-                section("Resistance profile: all organisms combined",
-                        "Every isolate pooled, for an overall view. Use the per-organism profile above "
-                        "for clinical interpretation, since organisms differ in natural resistance.")
+                section("Resistance profile: all organisms combined")
                 fig_all = resistance_figure(long_all)
                 if fig_all is None:
                     st.info("No susceptibility results yet.")
@@ -1373,9 +1372,10 @@ with tab2:
                         textfont=dict(size=16, color=INK), cliponaxis=False, customdata=b_cust,
                         hovertemplate="<b>%{y}</b><br>Animals: %{x}"
                                       "<br><br><b>Organisms found</b><br>%{customdata[0]}<extra></extra>"))
-                    style_fig(figb, max(160, 34 * len(yb)), bottom=30)
+                    style_fig(figb, max(180, 40 * len(yb)) + 10, bottom=30)
                     set_titles(figb, "<b>Number of animals</b>", "")
                     figb.update_xaxes(range=[0, (max(xb) if xb else 1) * 1.2], dtick=1)
+                    figb.update_yaxes(type="category", tickmode="linear", automargin=True)
                     st.plotly_chart(figb, use_container_width=True)
             else:
                 st.info("No host-species demographic data available.")
