@@ -182,6 +182,20 @@ CANON_ABBREVS = [
     "TIC75", "TIM85", "S5", "CN 120", "RD5", "FA10", "AN30", "IPM10", "VA30",
 ]
 
+# Disk code -> full antibiotic name for display (clinicians don't read disk codes).
+ABX_FULL = {
+    "AM10": "Ampicillin", "AMC30": "Amoxicillin-clavulanate", "CZN 30": "Cefazolin",
+    "CL30": "Cefalexin", "CAZ30": "Ceftazidime", "CVN30": "Cefovecin", "DO30": "Doxycycline",
+    "SXT": "Trimethoprim-sulfamethoxazole", "ENR5": "Enrofloxacin", "MAR": "Marbofloxacin",
+    "GM 10": "Gentamicin", "C30": "Chloramphenicol", "P10": "Penicillin",
+    "F/M300": "Nitrofurantoin", "N30": "Neomycin", "OX1": "Oxacillin", "FOX30": "Cefoxitin",
+    "CC2": "Clindamycin", "E15": "Erythromycin", "TIC75": "Ticarcillin",
+    "TIM85": "Ticarcillin-clavulanate", "S5": "Streptomycin", "CN 120": "Gentamicin (high-level)",
+    "RD5": "Rifampicin", "FA10": "Fusidic acid", "AN30": "Amikacin", "IPM10": "Imipenem",
+    "VA30": "Vancomycin", "Ceftiofur": "Ceftiofur", "Polymyxin B": "Polymyxin B",
+    "Pradofloxacin": "Pradofloxacin", "Tobramycin": "Tobramycin",
+}
+
 PDF_COLUMNS = [
     "Arrival Date", "Report Date", "Lab Reference", "Species", "Breed", "Age",
     "Sex", "Neutered", "Sample Type", "Site", "Sample Site (Detailed)", "Purity", "Isolate",
@@ -1217,11 +1231,11 @@ with tab2:
 
         st.divider()
 
-        # Resistance profile, split by Gram stain
+        # Resistance profile (cumulative antibiogram): per organism, and all combined
         sir_cols = [c for c in ALL_ABX if c in df.columns and df[c].isin(['S', 'I', 'R']).any()]
         if sir_cols:
-            long_all = df[["Isolate", "Gram Stain"] + sir_cols].melt(
-                id_vars=["Isolate", "Gram Stain"], var_name="ABx", value_name="Res")
+            long_all = df[["Isolate"] + sir_cols].melt(
+                id_vars=["Isolate"], var_name="ABx", value_name="Res")
             long_all = long_all[long_all["Res"].isin(["S", "I", "R"])]
             long_all["Res"] = long_all["Res"].map({'S': 'Susceptible', 'I': 'Intermediate', 'R': 'Resistant'})
 
@@ -1236,7 +1250,7 @@ with tab2:
                     return None
                 pct = ct[['Resistant', 'Intermediate', 'Susceptible']].div(ct['n'], axis=0) * 100
                 order_cats = pct['Resistant'].sort_values(ascending=True).index.tolist()
-                labels = [f"{a}  ·  n={int(ct.loc[a, 'n'])}" for a in order_cats]
+                labels = [f"{ABX_FULL.get(a, a)}  ·  n={int(ct.loc[a, 'n'])}" for a in order_cats]
                 org_map = {}
                 for (a, r), grp in long_sub.groupby(['ABx', 'Res'])['Isolate']:
                     vc = grp.value_counts()
@@ -1258,22 +1272,47 @@ with tab2:
                 fig.update_xaxes(range=[0, 100], ticksuffix="%")
                 return fig
 
-            for i, (gram_label, gram_val) in enumerate([("Gram Positive", "Positive"), ("Gram Negative", "Negative")]):
-                with st.container(border=True):
-                    section(f"Resistance profile by antibiotic: {gram_label}",
-                            "Each bar is 100% of the isolates tested for that drug, sorted by resistance. "
-                            "n = isolates tested. Hover a segment to see which organisms it is.")
-                    fig_g = resistance_figure(long_all[long_all["Gram Stain"] == gram_val])
-                    if fig_g is None:
-                        st.info(f"No {gram_label.lower()} susceptibility results yet.")
+            # One organism at a time (cumulative antibiogram), defaulting to S. pseudintermedius.
+            with st.container(border=True):
+                section("Resistance profile by organism",
+                        "A cumulative antibiogram for one organism: each bar is 100% of the isolates "
+                        "tested for that drug, sorted by resistance. Hover a segment to see the isolates.")
+                orgs = sorted(long_all["Isolate"].unique())
+                if orgs:
+                    default = next((o for o in orgs if "pseudintermedius" in o.lower()), orgs[0])
+                    pick = st.selectbox("Organism", orgs, index=orgs.index(default), key="abx_org")
+                    fig_o = resistance_figure(long_all[long_all["Isolate"] == pick])
+                    if fig_o is None:
+                        st.info("No susceptibility results for this organism yet.")
                     else:
-                        st.plotly_chart(fig_g, use_container_width=True)
-                if i == 0:
-                    st.divider()
+                        st.plotly_chart(fig_o, use_container_width=True)
+                else:
+                    st.info("No susceptibility results yet.")
+
+            st.divider()
+
+            # All organisms pooled, as a high-level overview.
+            with st.container(border=True):
+                section("Resistance profile: all organisms combined",
+                        "Every isolate pooled, for an overall view. Use the per-organism profile above "
+                        "for clinical interpretation, since organisms differ in natural resistance.")
+                fig_all = resistance_figure(long_all)
+                if fig_all is None:
+                    st.info("No susceptibility results yet.")
+                else:
+                    st.plotly_chart(fig_all, use_container_width=True)
             st.divider()
         else:
             st.info("No susceptibility results to profile. Add the AST logging sheet to see resistance by antibiotic.")
             st.divider()
+
+        def _org_breakdown(frame, top=6):
+            """Organisms found in a chart slice, as a hover list with counts."""
+            vc = frame["Isolate"].value_counts()
+            items = [f"{name} ({int(c)})" for name, c in vc.items()][:top]
+            if len(vc) > top:
+                items.append(f"+{len(vc) - top} more")
+            return "<br>".join(items) if items else "—"
 
         # Sample site distribution
         with st.container(border=True):
@@ -1281,10 +1320,12 @@ with tab2:
             clean_sites = df[~df["Site"].isin(["nan", "NA", "Na", ""])]
             s_counts = clean_sites["Site"].value_counts().sort_values(ascending=True)
             ys, xs = s_counts.index.tolist(), [int(v) for v in s_counts.values]
+            s_cust = [[_org_breakdown(clean_sites[clean_sites["Site"] == site])] for site in ys]
             figs = go.Figure(go.Bar(orientation="h", y=ys, x=xs, marker_color=BLUE_500,
                 marker_line_width=0, text=xs, textposition="outside",
-                textfont=dict(size=16, color=INK), cliponaxis=False,
-                hovertemplate="<b>%{y}</b><br>Isolates: %{x}<extra></extra>"))
+                textfont=dict(size=16, color=INK), cliponaxis=False, customdata=s_cust,
+                hovertemplate="<b>%{y}</b><br>Isolates: %{x}"
+                              "<br><br><b>Organisms found</b><br>%{customdata[0]}<extra></extra>"))
             style_fig(figs, max(300, 44 * len(ys)), bottom=30)
             set_titles(figs, "<b>Number of isolates</b>", "")
             figs.update_xaxes(range=[0, (max(xs) if xs else 1) * 1.2])
@@ -1303,6 +1344,8 @@ with tab2:
                     b_counts = sub["Breed"].value_counts().sort_values(ascending=True)
                     yb = b_counts.index.tolist()
                     xb = [int(v) for v in b_counts.values]
+                    b_cust = [[_org_breakdown(clean[(clean["Species"] == host) &
+                                                    (clean["Breed"] == breed)])] for breed in yb]
                     st.markdown(
                         f"<div style='color:{BLUE_800};font-size:1.05rem;font-weight:800;"
                         f"margin:0.5rem 0 0.15rem;'>{host} breeds "
@@ -1310,8 +1353,9 @@ with tab2:
                         unsafe_allow_html=True)
                     figb = go.Figure(go.Bar(orientation="h", y=yb, x=xb, marker_color=BLUE_800,
                         marker_line_width=0, text=xb, textposition="outside",
-                        textfont=dict(size=16, color=INK), cliponaxis=False,
-                        hovertemplate="<b>%{y}</b><br>Animals: %{x}<extra></extra>"))
+                        textfont=dict(size=16, color=INK), cliponaxis=False, customdata=b_cust,
+                        hovertemplate="<b>%{y}</b><br>Animals: %{x}"
+                                      "<br><br><b>Organisms found</b><br>%{customdata[0]}<extra></extra>"))
                     style_fig(figb, max(160, 34 * len(yb)), bottom=30)
                     set_titles(figb, "<b>Number of animals</b>", "")
                     figb.update_xaxes(range=[0, (max(xb) if xb else 1) * 1.2], dtick=1)
